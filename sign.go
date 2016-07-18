@@ -18,6 +18,7 @@ type SigningContext struct {
 	IdAttribute string
 	Prefix      string
 	Algorithm   SignatureAlgorithm
+	IsOkta      bool
 }
 
 func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
@@ -32,7 +33,7 @@ func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
 
 func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 	doc := etree.NewDocument()
-	doc.SetRoot(canonicalize(el, ctx.Algorithm))
+	doc.SetRoot(canonicalize(el, ctx.Algorithm, false))
 	doc.WriteSettings = etree.WriteSettings{
 		CanonicalAttrVal: true,
 		CanonicalEndTags: true,

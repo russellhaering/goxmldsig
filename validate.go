@@ -19,12 +19,14 @@ var wordWrappingRegexp = regexp.MustCompile("[ \t\r\n]+")
 type ValidationContext struct {
 	CertificateStore X509CertificateStore
 	IdAttribute      string
+	IsOkta           bool
 }
 
-func NewDefaultValidationContext(certificateStore X509CertificateStore) *ValidationContext {
+func NewDefaultValidationContext(certificateStore X509CertificateStore, isOkta bool) *ValidationContext {
 	return &ValidationContext{
 		CertificateStore: certificateStore,
 		IdAttribute:      DefaultIdAttr,
+		IsOkta:           isOkta,
 	}
 }
 
@@ -106,7 +108,7 @@ func (ctx *ValidationContext) transform(root, sig *etree.Element, transforms []*
 
 func (ctx *ValidationContext) digest(el *etree.Element, digestAlgorithmId, c14nAlgorithmId string) ([]byte, error) {
 	doc := etree.NewDocument()
-	doc.SetRoot(canonicalize(el, SignatureAlgorithm(c14nAlgorithmId)))
+	doc.SetRoot(canonicalize(el, SignatureAlgorithm(c14nAlgorithmId), ctx.IsOkta))
 
 	doc.WriteSettings = etree.WriteSettings{
 		CanonicalAttrVal: true,
@@ -141,7 +143,7 @@ func (ctx *ValidationContext) verifySignedInfo(signatureElement *etree.Element, 
 
 	// Canonicalize the xml
 	doc := etree.NewDocument()
-	doc.SetRoot(canonicalize(signedInfo, SignatureAlgorithm(signatureMethodId)))
+	doc.SetRoot(canonicalize(signedInfo, SignatureAlgorithm(signatureMethodId), ctx.IsOkta))
 	doc.WriteSettings = etree.WriteSettings{
 		CanonicalAttrVal: true,
 		CanonicalEndTags: true,
