@@ -217,7 +217,12 @@ func (ctx *ValidationContext) validateSignature(el, sig *etree.Element, cert *x5
 	}
 
 	// Get the element referenced in the 'SignedInfo'
-	referencedElement := el.FindElement(fmt.Sprintf("//[@%s='%s']", ctx.IdAttribute, uri.Value[1:]))
+	var referencedElement *etree.Element
+	if uri.Value == "" {
+		referencedElement = el
+	} else {
+		referencedElement = el.FindElement(fmt.Sprintf("//[@%s='%s']", ctx.IdAttribute, uri.Value[1:]))
+	}
 	if referencedElement == nil {
 		return nil, errors.New("Unable to find referenced element: " + uri.Value)
 	}
@@ -320,8 +325,15 @@ func (ctx *ValidationContext) findSignature(el *etree.Element) (*etree.Element, 
 		}
 
 		uriAttr := referenceElement.SelectAttr(URIAttr)
-		if uriAttr == nil || uriAttr.Value == "" {
+		if uriAttr == nil {
 			return errors.New("Missing URI attribute")
+		}
+
+		// https://www.w3.org/TR/xmldsig-core/#sec-ReferenceProcessingModel
+		// An empty reference URI refers to the containing XML resource
+		if uriAttr.Value == "" {
+			signatureElement = sig
+			return etreeutils.ErrTraversalHalted
 		}
 
 		if !uriRegexp.MatchString(uriAttr.Value) {
