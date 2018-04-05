@@ -286,6 +286,7 @@ func (ctx *ValidationContext) findSignature(el *etree.Element) (*types.Signature
 
 				c14NMethod := detachedSignedInfo.FindElement(childPath(detachedSignedInfo.Space, CanonicalizationMethodTag))
 				if c14NMethod == nil {
+					c14NMethod = detachedSignedInfo.FindElement(childPath("", CanonicalizationMethodTag))
 					return errors.New("missing CanonicalizationMethod on Signature")
 				}
 
