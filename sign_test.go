@@ -96,17 +96,6 @@ func TestSignErrors(t *testing.T) {
 
 	_, err := ctx.SignEnveloped(authnRequest)
 	require.Error(t, err)
-
-	randomKeyStore = RandomKeyStoreForTest()
-	ctx = NewDefaultSigningContext(randomKeyStore)
-
-	authnRequest = &etree.Element{
-		Space: "samlp",
-		Tag:   "AuthnRequest",
-	}
-
-	_, err = ctx.SignEnveloped(authnRequest)
-	require.Error(t, err)
 }
 
 func TestSignNonDefaultID(t *testing.T) {
