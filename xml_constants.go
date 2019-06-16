@@ -1,6 +1,9 @@
 package dsig
 
-import "crypto"
+import (
+	"crypto"
+	"crypto/x509"
+)
 
 const (
 	DefaultPrefix = "ds"
@@ -39,9 +42,14 @@ func (id AlgorithmID) String() string {
 }
 
 const (
-	RSASHA1SignatureMethod   = "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
-	RSASHA256SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
-	RSASHA512SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512"
+	RSASHA1SignatureMethod     = "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
+	RSASHA256SignatureMethod   = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+	RSASHA384SignatureMethod   = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384"
+	RSASHA512SignatureMethod   = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512"
+	ECDSASHA1SignatureMethod   = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha1"
+	ECDSASHA256SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"
+	ECDSASHA384SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384"
+	ECDSASHA512SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512"
 )
 
 //Well-known signature algorithms
@@ -59,6 +67,7 @@ const (
 var digestAlgorithmIdentifiers = map[crypto.Hash]string{
 	crypto.SHA1:   "http://www.w3.org/2000/09/xmldsig#sha1",
 	crypto.SHA256: "http://www.w3.org/2001/04/xmlenc#sha256",
+	crypto.SHA384: "http://www.w3.org/2001/04/xmldsig-more#sha384",
 	crypto.SHA512: "http://www.w3.org/2001/04/xmlenc#sha512",
 }
 
@@ -78,4 +87,15 @@ var signatureMethodIdentifiers = map[crypto.Hash]string{
 	crypto.SHA1:   RSASHA1SignatureMethod,
 	crypto.SHA256: RSASHA256SignatureMethod,
 	crypto.SHA512: RSASHA512SignatureMethod,
+}
+
+var x509SignatureAlgorithmByIdentifier = map[string]x509.SignatureAlgorithm{
+	RSASHA1SignatureMethod:     x509.SHA1WithRSA,
+	RSASHA256SignatureMethod:   x509.SHA256WithRSA,
+	RSASHA384SignatureMethod:   x509.SHA384WithRSA,
+	RSASHA512SignatureMethod:   x509.SHA512WithRSA,
+	ECDSASHA1SignatureMethod:   x509.ECDSAWithSHA1,
+	ECDSASHA256SignatureMethod: x509.ECDSAWithSHA256,
+	ECDSASHA384SignatureMethod: x509.ECDSAWithSHA384,
+	ECDSASHA512SignatureMethod: x509.ECDSAWithSHA512,
 }

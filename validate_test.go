@@ -126,6 +126,32 @@ yy7YHlSiVX13QH2XTu/iQQ==
 -----END CERTIFICATE-----
 `
 
+const ecdsaResponse = `<samlp:Response xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:xs="http://www.w3.org/2001/XMLSchema" ID="id-e65dcbd76bd33f51c51137855d499382ffcbd235" Version="2.0" IssueInstant="2019-06-14T21:16:16.206Z"><saml:Issuer Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">https://localhost/saml/acs/</saml:Issuer><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference URI="#id-e65dcbd76bd33f51c51137855d499382ffcbd235"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>Uh15pBqpaLb8KW9EnUCSsw1D3UN6IE7cM6c69fwy1xQ=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>MEUCIAwuDhyvbhNE7vfS9oqsGwdao/E8EJSK1mQ8gIEIIOQBAiEAud5l0TQru0m291/XzWvdBJ71HN/hOknOnKXqM7OwXrU=</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB3jCCAYSgAwIBAgITC3mzvAn7vitNgC2KTnea8hlp8jAKBggqhkjOPQQDAjBFMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTE5MDYxMzAwNTYwMVoXDTIxMDYxMjAwNTYwMVowRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABEIa9GeZw9TVMAv7Vnn3bz0DdQstQTIHkSnYfKw6QObxRZJoWvDRcvv2zblCki5FuqTbYqUNeDIQEsKwTJRHUCKjUzBRMB0GA1UdDgQWBBRDic4JRcFytcfX1QkFlsOJVUdrTzAfBgNVHSMEGDAWgBRDic4JRcFytcfX1QkFlsOJVUdrTzAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIQDF2He80OqZJCe8Fjo0BlS5UsRJ3tChy/ZbmkE2DUaFjgIgKpLzRwr21VdekDagOpZj8ENzJ9YC5w+BwffTRwfkyLE=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature><samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status><saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="beepboopmeow" IssueInstant="2019-06-14T21:16:16.206Z" Version="2.0"><saml:Issuer Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">urn:extrahop:saml:hopcloud:ra:idp</saml:Issuer><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/><ds:Reference URI="#beepboopmeow"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>FfMcWntKHiIB8bpyFayq1nK5wtcCHMpCUnowv7/0dBQ=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>MEQCIFXVoJmVBLb+zJKDwnIBUA+Mdp0ww0689pvIDPktROS1AiAimmnSUjzMMflVUJvngeyJta33wVMMObIxcEDNesco5A==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB3jCCAYSgAwIBAgITC3mzvAn7vitNgC2KTnea8hlp8jAKBggqhkjOPQQDAjBFMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTE5MDYxMzAwNTYwMVoXDTIxMDYxMjAwNTYwMVowRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABEIa9GeZw9TVMAv7Vnn3bz0DdQstQTIHkSnYfKw6QObxRZJoWvDRcvv2zblCki5FuqTbYqUNeDIQEsKwTJRHUCKjUzBRMB0GA1UdDgQWBBRDic4JRcFytcfX1QkFlsOJVUdrTzAfBgNVHSMEGDAWgBRDic4JRcFytcfX1QkFlsOJVUdrTzAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIQDF2He80OqZJCe8Fjo0BlS5UsRJ3tChy/ZbmkE2DUaFjgIgKpLzRwr21VdekDagOpZj8ENzJ9YC5w+BwffTRwfkyLE=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature><saml:Subject><saml:NameID Format="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent">woof</saml:NameID><saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml:SubjectConfirmationData NotOnOrAfter="2019-06-14T21:17:46.206Z"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore="2019-06-14T21:13:16.206Z" NotOnOrAfter="2019-06-14T21:17:46.206Z"><saml:AudienceRestriction><saml:Audience></saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant="2019-06-14T21:16:16.206Z" SessionIndex="beepboopmeow"><saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement><saml:Attribute Name="urn:oid:2.5.4.42" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri"><saml:AttributeValue xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:anyType">reserved</saml:AttributeValue></saml:Attribute><saml:Attribute Name="urn:oid:2.5.4.4" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri"><saml:AttributeValue xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:anyType">reserved</saml:AttributeValue></saml:Attribute><saml:Attribute Name="urn:oid:0.9.2342.19200300.100.1.3" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri"><saml:AttributeValue xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:anyType">boop@example.com</saml:AttributeValue></saml:Attribute></saml:AttributeStatement></saml:Assertion></samlp:Response>`
+
+const ecdsaCert = `
+-----BEGIN CERTIFICATE-----
+MIIB3jCCAYSgAwIBAgITC3mzvAn7vitNgC2KTnea8hlp8jAKBggqhkjOPQQDAjBF
+MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50
+ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTE5MDYxMzAwNTYwMVoXDTIxMDYxMjAw
+NTYwMVowRTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNV
+BAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqGSM49AgEGCCqGSM49
+AwEHA0IABEIa9GeZw9TVMAv7Vnn3bz0DdQstQTIHkSnYfKw6QObxRZJoWvDRcvv2
+zblCki5FuqTbYqUNeDIQEsKwTJRHUCKjUzBRMB0GA1UdDgQWBBRDic4JRcFytcfX
+1QkFlsOJVUdrTzAfBgNVHSMEGDAWgBRDic4JRcFytcfX1QkFlsOJVUdrTzAPBgNV
+HRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIQDF2He80OqZJCe8Fjo0BlS5
+UsRJ3tChy/ZbmkE2DUaFjgIgKpLzRwr21VdekDagOpZj8ENzJ9YC5w+BwffTRwfk
+yLE=
+-----END CERTIFICATE-----
+`
+
+const ecdsaKey = `
+-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEILnLofyDaFeGyDutTFYuWY0u5IVmny1spzfJbCixceI7oAoGCCqGSM49
+AwEHoUQDQgAEQhr0Z5nD1NUwC/tWefdvPQN1Cy1BMgeRKdh8rDpA5vFFkmha8NFy
++/bNuUKSLkW6pNtipQ14MhASwrBMlEdQIg==
+-----END EC PRIVATE KEY-----
+`
+
 func TestDigest(t *testing.T) {
 	canonicalizer := MakeC14N10ExclusiveCanonicalizerWithPrefixList("")
 	doc := etree.NewDocument()
@@ -190,9 +216,13 @@ func TestValidateWithEmptySignatureReference(t *testing.T) {
 	require.NotEmpty(t, reference)
 	require.Empty(t, reference.SelectAttr(URIAttr).Value)
 
-	block, _ := pem.Decode([]byte(oktaCert))
+	testValidateDoc(t, doc, oktaCert)
+}
+
+func testValidateDoc(t *testing.T, doc *etree.Document, certPEM string) {
+	block, _ := pem.Decode([]byte(certPEM))
 	cert, err := x509.ParseCertificate(block.Bytes)
-	require.NoError(t, err, "couldn't parse okta cert pem block")
+	require.NoError(t, err, "couldn't parse cert pem block")
 
 	certStore := MemoryX509CertificateStore{
 		Roots: []*x509.Certificate{cert},
@@ -202,4 +232,15 @@ func TestValidateWithEmptySignatureReference(t *testing.T) {
 	el, err := vc.Validate(doc.Root())
 	require.NoError(t, err)
 	require.NotEmpty(t, el)
+}
+
+func TestValidateECDSA(t *testing.T) {
+	doc := etree.NewDocument()
+	err := doc.ReadFromBytes([]byte(ecdsaResponse))
+	require.NoError(t, err)
+
+	sig := doc.FindElement("//" + SignatureTag)
+	require.NotEmpty(t, sig)
+
+	testValidateDoc(t, doc, ecdsaCert)
 }
