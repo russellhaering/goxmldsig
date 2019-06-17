@@ -71,22 +71,41 @@ var digestAlgorithmIdentifiers = map[crypto.Hash]string{
 	crypto.SHA512: "http://www.w3.org/2001/04/xmlenc#sha512",
 }
 
+type signatureMethodInfo struct {
+	PublicKeyAlgorithm x509.PublicKeyAlgorithm
+	Hash               crypto.Hash
+}
+
 var digestAlgorithmsByIdentifier = map[string]crypto.Hash{}
-var signatureMethodsByIdentifier = map[string]crypto.Hash{}
+var signatureMethodByIdentifiers = map[string]signatureMethodInfo{}
 
 func init() {
 	for hash, id := range digestAlgorithmIdentifiers {
 		digestAlgorithmsByIdentifier[id] = hash
 	}
-	for hash, id := range signatureMethodIdentifiers {
-		signatureMethodsByIdentifier[id] = hash
+	for algo, hashToMethod := range signatureMethodIdentifiers {
+		for hash, method := range hashToMethod {
+			signatureMethodByIdentifiers[method] = signatureMethodInfo{
+				PublicKeyAlgorithm: algo,
+				Hash:               hash,
+			}
+		}
 	}
 }
 
-var signatureMethodIdentifiers = map[crypto.Hash]string{
-	crypto.SHA1:   RSASHA1SignatureMethod,
-	crypto.SHA256: RSASHA256SignatureMethod,
-	crypto.SHA512: RSASHA512SignatureMethod,
+var signatureMethodIdentifiers = map[x509.PublicKeyAlgorithm]map[crypto.Hash]string{
+	x509.RSA: map[crypto.Hash]string{
+		crypto.SHA1:   RSASHA1SignatureMethod,
+		crypto.SHA256: RSASHA256SignatureMethod,
+		crypto.SHA384: RSASHA384SignatureMethod,
+		crypto.SHA512: RSASHA512SignatureMethod,
+	},
+	x509.ECDSA: map[crypto.Hash]string{
+		crypto.SHA1:   ECDSASHA1SignatureMethod,
+		crypto.SHA256: ECDSASHA256SignatureMethod,
+		crypto.SHA384: ECDSASHA384SignatureMethod,
+		crypto.SHA512: ECDSASHA512SignatureMethod,
+	},
 }
 
 var x509SignatureAlgorithmByIdentifier = map[string]x509.SignatureAlgorithm{
