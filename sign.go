@@ -15,11 +15,19 @@ import (
 )
 
 type SigningContext struct {
-	Hash          crypto.Hash
-	KeyStore      X509KeyStore
+	Hash crypto.Hash
+
+	// This field will be nil and unused if the SigningContext is created with
+	// NewSigningContext
+	KeyStore X509KeyStore
+
 	IdAttribute   string
 	Prefix        string
 	Canonicalizer Canonicalizer
+
+	// KeyStore is mutually exclusive with signer and certs
+	signer crypto.Signer
+	certs  [][]byte
 }
 
 func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
@@ -30,6 +38,27 @@ func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
 		Prefix:        DefaultPrefix,
 		Canonicalizer: MakeC14N11Canonicalizer(),
 	}
+}
+
+// NewSigningContext creates a new signing context with the given signer and certificate chain.
+// Note that e.g. rsa.PrivateKey implements the crypto.Signer interface.
+// The certificate chain is a slice of ASN.1 DER-encoded X.509 certificates.
+// A SigningContext created with this function should not use the KeyStore field.
+// It will return error if passed a nil crypto.Signer
+func NewSigningContext(signer crypto.Signer, certs [][]byte) (*SigningContext, error) {
+	if signer == nil {
+		return nil, errors.New("signer cannot be nil for NewSigningContext")
+	}
+	ctx := &SigningContext{
+		Hash:          crypto.SHA256,
+		IdAttribute:   DefaultIdAttr,
+		Prefix:        DefaultPrefix,
+		Canonicalizer: MakeC14N11Canonicalizer(),
+
+		signer: signer,
+		certs:  certs,
+	}
+	return ctx, nil
 }
 
 func (ctx *SigningContext) SetSignatureMethod(algorithmID string) error {
@@ -56,6 +85,46 @@ func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 	}
 
 	return hash.Sum(nil), nil
+}
+
+func (ctx *SigningContext) signDigest(digest []byte) ([]byte, error) {
+	if ctx.KeyStore != nil {
+		key, _, err := ctx.KeyStore.GetKeyPair()
+		if err != nil {
+			return nil, err
+		}
+
+		rawSignature, err := rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
+		if err != nil {
+			return nil, err
+		}
+
+		return rawSignature, nil
+	} else {
+		rawSignature, err := ctx.signer.Sign(rand.Reader, digest, ctx.Hash)
+		if err != nil {
+			return nil, err
+		}
+
+		return rawSignature, nil
+	}
+}
+
+func (ctx *SigningContext) getCerts() ([][]byte, error) {
+	if ctx.KeyStore != nil {
+		if cs, ok := ctx.KeyStore.(X509ChainStore); ok {
+			return cs.GetChain()
+		}
+
+		_, cert, err := ctx.KeyStore.GetKeyPair()
+		if err != nil {
+			return nil, err
+		}
+
+		return [][]byte{cert}, nil
+	} else {
+		return ctx.certs, nil
+	}
 }
 
 func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool) (*etree.Element, error) {
@@ -171,20 +240,12 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 		return nil, err
 	}
 
-	key, cert, err := ctx.KeyStore.GetKeyPair()
+	rawSignature, err := ctx.signDigest(digest)
 	if err != nil {
 		return nil, err
 	}
 
-	certs := [][]byte{cert}
-	if cs, ok := ctx.KeyStore.(X509ChainStore); ok {
-		certs, err = cs.GetChain()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	rawSignature, err := rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
+	certs, err := ctx.getCerts()
 	if err != nil {
 		return nil, err
 	}
@@ -246,11 +307,5 @@ func (ctx *SigningContext) SignString(content string) ([]byte, error) {
 	}
 	digest := hash.Sum(nil)
 
-	var signature []byte
-	if key, _, err := ctx.KeyStore.GetKeyPair(); err != nil {
-		return nil, fmt.Errorf("unable to fetch key for signing: %v", err)
-	} else if signature, err = rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest); err != nil {
-		return nil, fmt.Errorf("error signing: %v", err)
-	}
-	return signature, nil
+	return ctx.signDigest(digest)
 }

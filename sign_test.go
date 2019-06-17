@@ -12,7 +12,17 @@ import (
 func TestSign(t *testing.T) {
 	randomKeyStore := RandomKeyStoreForTest()
 	ctx := NewDefaultSigningContext(randomKeyStore)
+	testSignWithContext(t, ctx)
+}
 
+func TestNewSigningContext(t *testing.T) {
+	randomKeyStore := RandomKeyStoreForTest().(*MemoryX509KeyStore)
+	ctx, err := NewSigningContext(randomKeyStore.privateKey, [][]byte{randomKeyStore.cert})
+	require.NoError(t, err)
+	testSignWithContext(t, ctx)
+}
+
+func testSignWithContext(t *testing.T, ctx *SigningContext) {
 	authnRequest := &etree.Element{
 		Space: "samlp",
 		Tag:   "AuthnRequest",
