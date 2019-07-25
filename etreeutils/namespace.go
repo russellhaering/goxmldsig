@@ -76,34 +76,40 @@ func (ctx NSContext) declare(prefix, namespace string) etree.Attr {
 }
 
 func (ctx NSContext) SubContext(el *etree.Element) (NSContext, error) {
+	return ctx.SubContexts([]*etree.Element { el })
+}
+
+func (ctx NSContext) SubContexts(els []*etree.Element) (NSContext, error) {
 	// The subcontext should inherit existing declared prefixes
 	newCtx := ctx.Copy()
 
-	// Merge new namespace declarations on top of existing ones.
-	for _, attr := range el.Attr {
-		if attr.Space == xmlnsPrefix {
-			// This attribute is a namespace declaration of the form "xmlns:<prefix>"
+	for _, el := range els {
+		// Merge new namespace declarations on top of existing ones.
+		for _, attr := range el.Attr {
+			if attr.Space == xmlnsPrefix {
+				// This attribute is a namespace declaration of the form "xmlns:<prefix>"
 
-			// The 'xml' namespace may only be re-declared with the name 'http://www.w3.org/XML/1998/namespace'
-			if attr.Key == xmlPrefix && attr.Value != XMLNamespace {
-				return ctx, ErrReservedNamespace
+				// The 'xml' namespace may only be re-declared with the name 'http://www.w3.org/XML/1998/namespace'
+				if attr.Key == xmlPrefix && attr.Value != XMLNamespace {
+					return ctx, ErrReservedNamespace
+				}
+
+				// The 'xmlns' namespace may not be re-declared
+				if attr.Key == xmlnsPrefix {
+					return ctx, ErrReservedNamespace
+				}
+
+				newCtx.declare(attr.Key, attr.Value)
+			} else if attr.Space == defaultPrefix && attr.Key == xmlnsPrefix {
+				// This attribute is a default namespace declaration
+
+				// The xmlns namespace value may not be declared as the default namespace
+				if attr.Value == XMLNSNamespace {
+					return ctx, ErrInvalidDefaultNamespace
+				}
+
+				newCtx.declare(defaultPrefix, attr.Value)
 			}
-
-			// The 'xmlns' namespace may not be re-declared
-			if attr.Key == xmlnsPrefix {
-				return ctx, ErrReservedNamespace
-			}
-
-			newCtx.declare(attr.Key, attr.Value)
-		} else if attr.Space == defaultPrefix && attr.Key == xmlnsPrefix {
-			// This attribute is a default namespace declaration
-
-			// The xmlns namespace value may not be declared as the default namespace
-			if attr.Value == XMLNSNamespace {
-				return ctx, ErrInvalidDefaultNamespace
-			}
-
-			newCtx.declare(defaultPrefix, attr.Value)
 		}
 	}
 
@@ -391,13 +397,33 @@ func NSFindOneChildCtx(ctx NSContext, el *etree.Element, namespace, tag string) 
 // NSBuildParentContext recurses upward from an element in order to build an NSContext
 // for its immediate parent. If the element has no parent DefaultNSContext
 // is returned.
+func NSBuildParentContexts(els []*etree.Element) (NSContext, error) {
+
+	ctx := DefaultNSContext
+	for _, el := range els {
+		dctx, err := nSBuildParentContext(ctx, el)
+		ctx = dctx
+		if (err != nil) {
+			return DefaultNSContext, err
+		}
+	}
+        return ctx, nil
+}
+
 func NSBuildParentContext(el *etree.Element) (NSContext, error) {
+
+        return NSBuildParentContexts([]*etree.Element { el })
+}
+
+
+
+func nSBuildParentContext(ctx NSContext, el *etree.Element) (NSContext, error) {
 	parent := el.Parent()
 	if parent == nil {
 		return DefaultNSContext, nil
 	}
 
-	ctx, err := NSBuildParentContext(parent)
+	ctx, err := nSBuildParentContext(ctx, parent)
 
 	if err != nil {
 		return ctx, err

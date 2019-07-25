@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"testing"
 
+	"io/ioutil"
 	"github.com/beevik/etree"
 	"github.com/stretchr/testify/require"
+	"fmt"
 )
 
 func TestSign(t *testing.T) {
@@ -137,3 +139,43 @@ func TestSignNonDefaultID(t *testing.T) {
 	refURI := ref.SelectAttrValue("URI", "")
 	require.Equal(t, refURI, "#"+id)
 }
+
+func TestSignSoapRequest(t *testing.T) {
+	// Given
+	bs, err := ioutil.ReadFile("./testdata/soaprequest_result.xml")
+
+        ks := RandomKeyStoreForTest()
+        ctx := &SigningContext{
+                Hash:          crypto.SHA256,
+                KeyStore:      ks,
+                IdAttribute:   "wsu:Id",
+                Prefix:        DefaultPrefix,
+                Canonicalizer: MakeC14N11Canonicalizer(),
+        }
+
+	doc := etree.NewDocument()
+	err = doc.ReadFromFile("./testdata/soaprequest.xml")
+
+	bodyPath, err := etree.CompilePath("./soap:Envelope/soap:Body")
+        bodyElement := doc.FindElementPath(bodyPath)
+	require.NotNil(t, bodyElement)
+
+	actionPath, err := etree.CompilePath("./soap:Envelope/soap:Header/Action")
+	actionElement := doc.FindElementPath(actionPath)
+	require.NotNil(t, actionElement)
+
+	securityPath, err := etree.CompilePath("./soap:Envelope/soap:Header/wsse:Security")
+        securityElement := doc.FindElementPath(securityPath)
+        require.NotNil(t, securityElement)
+
+	// When
+        sig, err := ctx.ConstructSignature([]*etree.Element { bodyElement, actionElement }, true)
+	require.NoError(t, err)
+	require.NotNil(t, sig)
+	securityElement.AddChild(sig)
+
+	// Then
+	str, err := doc.WriteToString()
+	require.NoError(t, err)
+}
+
