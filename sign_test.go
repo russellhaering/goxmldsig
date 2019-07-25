@@ -5,10 +5,8 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"io/ioutil"
 	"github.com/beevik/etree"
 	"github.com/stretchr/testify/require"
-	"fmt"
 )
 
 func TestSign(t *testing.T) {
@@ -142,7 +140,7 @@ func TestSignNonDefaultID(t *testing.T) {
 
 func TestSignSoapRequest(t *testing.T) {
 	// Given
-	bs, err := ioutil.ReadFile("./testdata/soaprequest_result.xml")
+	//bs, err := ioutil.ReadFile("./testdata/soaprequest_result.xml")
 
         ks := RandomKeyStoreForTest()
         ctx := &SigningContext{
@@ -154,7 +152,7 @@ func TestSignSoapRequest(t *testing.T) {
         }
 
 	doc := etree.NewDocument()
-	err = doc.ReadFromFile("./testdata/soaprequest.xml")
+	err := doc.ReadFromFile("./testdata/soaprequest.xml")
 
 	bodyPath, err := etree.CompilePath("./soap:Envelope/soap:Body")
         bodyElement := doc.FindElementPath(bodyPath)
@@ -175,7 +173,7 @@ func TestSignSoapRequest(t *testing.T) {
 	securityElement.AddChild(sig)
 
 	// Then
-	str, err := doc.WriteToString()
-	require.NoError(t, err)
+//	str, err := doc.WriteToString()
+//	require.NoError(t, err)
 }
 
