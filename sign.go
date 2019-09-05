@@ -124,7 +124,7 @@ func (ctx *SigningContext) ConstructSignature(els []*etree.Element, enveloped bo
 	return ctx.ConstructSignatureRef(els, nil, enveloped)
 }
 
-func (ctx *SigningContext) ConstructSignatureRef(els []*etree.Element, keyRefElement *etree.Element, enveloped bool) (*etree.Element, error) {
+func (ctx *SigningContext) ConstructSignatureRef(els []*etree.Element, keyRefElementDecorator func(*etree.Element), enveloped bool) (*etree.Element, error) {
 	signedInfo, err := ctx.constructSignedInfo(els, enveloped)
 	if err != nil {
 		return nil, err
@@ -201,14 +201,14 @@ func (ctx *SigningContext) ConstructSignatureRef(els []*etree.Element, keyRefEle
 
 	keyInfo := ctx.createNamespacedElement(sig, KeyInfoTag)
 
-	if (keyRefElement == nil) {
+	if (keyRefElementDecorator == nil) {
 		x509Data := ctx.createNamespacedElement(keyInfo, X509DataTag)
 		for _, cert := range certs {
 			x509Certificate := ctx.createNamespacedElement(x509Data, X509CertificateTag)
 			x509Certificate.SetText(base64.StdEncoding.EncodeToString(cert))
 		}
 	} else {
-		keyInfo.AddChild(keyRefElement)
+		keyRefElementDecorator(keyInfo)
 	}
 
 	return sig, nil
