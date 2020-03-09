@@ -108,11 +108,8 @@ func (ctx *ValidationContext) transform(
 	el *etree.Element,
 	sig *types.Signature,
 	ref *types.Reference) (*etree.Element, Canonicalizer, error) {
-	transforms := ref.Transforms.Transforms
-
-	if len(transforms) != 2 {
-		return nil, nil, errors.New("Expected Enveloped and C14N transforms")
-	}
+		// Transforms is an optional element https://www.w3.org/TR/xmldsig-core/#sec-CanonicalizationMethod 4.4.3.4
+		transforms := ref.Transforms.Transforms
 
 	// map the path to the passed signature relative to the passed root, in
 	// order to enable removal of the signature by an enveloped signature
@@ -152,6 +149,25 @@ func (ctx *ValidationContext) transform(
 
 		default:
 			return nil, nil, errors.New("Unknown Transform Algorithm: " + algo)
+		}
+	}
+
+	if canonicalizer == nil {
+		// Canonicalization Algorithm found outside the transform node
+		canonicalAlg := sig.SignedInfo.CanonicalizationMethod.Algorithm
+
+		switch AlgorithmID(canonicalAlg) {
+
+		case CanonicalXML11AlgorithmId:
+			canonicalizer = MakeC14N11Canonicalizer()
+
+		case CanonicalXML10RecAlgorithmId:
+			canonicalizer = MakeC14N10RecCanonicalizer()
+
+		case CanonicalXML10CommentAlgorithmId:
+			canonicalizer = MakeC14N10CommentCanonicalizer()
+		default:
+			return nil, nil, errors.New("Unknown Canonicalizer Algorithm: " + canonicalAlg)
 		}
 	}
 
@@ -233,16 +249,14 @@ func (ctx *ValidationContext) verifySignedInfo(sig *types.Signature, canonicaliz
 }
 
 func (ctx *ValidationContext) validateSignature(el *etree.Element, sig *types.Signature, cert *x509.Certificate) (*etree.Element, error) {
+	//Id attr is optional for CPIX element https://dashif.org/docs/CPIX2.1/HTML/Index.html#schema-cpix
 	idAttr := el.SelectAttr(ctx.IdAttribute)
-	if idAttr == nil || idAttr.Value == "" {
-		return nil, errors.New("Missing ID attribute")
-	}
 
 	var ref *types.Reference
 
 	// Find the first reference which references the top-level element
 	for _, _ref := range sig.SignedInfo.References {
-		if _ref.URI == "" || _ref.URI[1:] == idAttr.Value {
+		if _ref.URI == "" || (idAttr != nil && _ref.URI[1:] == idAttr.Value) {
 			ref = &_ref
 		}
 	}
@@ -298,10 +312,8 @@ func contains(roots []*x509.Certificate, cert *x509.Certificate) bool {
 
 // findSignature searches for a Signature element referencing the passed root element.
 func (ctx *ValidationContext) findSignature(el *etree.Element) (*types.Signature, error) {
+	//Id attr is optional for CPIX element https://dashif.org/docs/CPIX2.1/HTML/Index.html#schema-cpix
 	idAttr := el.SelectAttr(ctx.IdAttribute)
-	if idAttr == nil || idAttr.Value == "" {
-		return nil, errors.New("Missing ID attribute")
-	}
 
 	var sig *types.Signature
 
@@ -380,7 +392,7 @@ func (ctx *ValidationContext) findSignature(el *etree.Element) (*types.Signature
 		// Traverse references in the signature to determine whether it has at least
 		// one reference to the top level element. If so, conclude the search.
 		for _, ref := range _sig.SignedInfo.References {
-			if ref.URI == "" || ref.URI[1:] == idAttr.Value {
+			if ref.URI == "" || (idAttr != nil && ref.URI[1:] == idAttr.Value) {
 				sig = _sig
 				return etreeutils.ErrTraversalHalted
 			}
@@ -465,3 +477,4 @@ func (ctx *ValidationContext) Validate(el *etree.Element) (*etree.Element, error
 
 	return ctx.validateSignature(el, sig, cert)
 }
+
