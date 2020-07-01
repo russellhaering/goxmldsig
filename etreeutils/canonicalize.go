@@ -40,9 +40,10 @@ func transformExcC14n(ctx, declared NSContext, el *etree.Element, inclusiveNames
 	for _, attr := range el.Attr {
 		switch {
 		case attr.Space == xmlnsPrefix:
-			if _, ok := inclusiveNamespaces[attr.Key]; ok {
-				visiblyUtilizedPrefixes[attr.Key] = struct{}{}
-			}
+			//This probably isn't the right way to fix this, but if a namespace is unused the reference implementation leaves it alone
+			//if _, ok := inclusiveNamespaces[attr.Key]; ok {
+			visiblyUtilizedPrefixes[attr.Key] = struct{}{}
+			//}
 
 		case attr.Space == defaultPrefix && attr.Key == xmlnsPrefix:
 			if _, ok := inclusiveNamespaces[defaultPrefix]; ok {
