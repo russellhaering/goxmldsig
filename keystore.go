@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const GLIDE_SEE_ME = "kukkeluk"
+
 type X509KeyStore interface {
 	GetKeyPair() (privateKey *rsa.PrivateKey, cert []byte, err error)
 }

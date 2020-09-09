@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/beevik/etree"
+
 	"github.com/russellhaering/goxmldsig/etreeutils"
 )
 
@@ -58,7 +59,7 @@ func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool) (*etree.Element, error) {
+func (ctx *SigningContext) constructSignedInfo(els []*etree.Element, enveloped bool) (*etree.Element, error) {
 	digestAlgorithmIdentifier := ctx.GetDigestAlgorithmIdentifier()
 	if digestAlgorithmIdentifier == "" {
 		return nil, errors.New("unsupported hash mechanism")
@@ -67,11 +68,6 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 	signatureMethodIdentifier := ctx.GetSignatureMethodIdentifier()
 	if signatureMethodIdentifier == "" {
 		return nil, errors.New("unsupported signature method")
-	}
-
-	digest, err := ctx.digest(el)
-	if err != nil {
-		return nil, err
 	}
 
 	signedInfo := &etree.Element{
@@ -87,38 +83,53 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 	signatureMethod := ctx.createNamespacedElement(signedInfo, SignatureMethodTag)
 	signatureMethod.CreateAttr(AlgorithmAttr, signatureMethodIdentifier)
 
-	// /SignedInfo/Reference
-	reference := ctx.createNamespacedElement(signedInfo, ReferenceTag)
+        for _, el := range els {
+                digest, err := ctx.digest(el)
+                if err != nil {
+                        return nil, err
+                }
 
-	dataId := el.SelectAttrValue(ctx.IdAttribute, "")
-	if dataId == "" {
-		return nil, errors.New("Missing data ID")
+		// /SignedInfo/Reference
+		reference := ctx.createNamespacedElement(signedInfo, ReferenceTag)
+
+		dataId := el.SelectAttrValue(ctx.IdAttribute, "")
+		if dataId == "" {
+			return nil, errors.New("Missing data ID")
+		}
+
+		reference.CreateAttr(URIAttr, "#"+dataId)
+
+		// /SignedInfo/Reference/Transforms
+		transforms := ctx.createNamespacedElement(reference, TransformsTag)
+		if enveloped {
+			envelopedTransform := ctx.createNamespacedElement(transforms, TransformTag)
+			envelopedTransform.CreateAttr(AlgorithmAttr, EnvelopedSignatureAltorithmId.String())
+		}
+		canonicalizationAlgorithm := ctx.createNamespacedElement(transforms, TransformTag)
+		canonicalizationAlgorithm.CreateAttr(AlgorithmAttr, string(ctx.Canonicalizer.Algorithm()))
+
+		// /SignedInfo/Reference/DigestMethod
+		digestMethod := ctx.createNamespacedElement(reference, DigestMethodTag)
+		digestMethod.CreateAttr(AlgorithmAttr, digestAlgorithmIdentifier)
+
+		// /SignedInfo/Reference/DigestValue
+		digestValue := ctx.createNamespacedElement(reference, DigestValueTag)
+		digestValue.SetText(base64.StdEncoding.EncodeToString(digest))
 	}
-
-	reference.CreateAttr(URIAttr, "#"+dataId)
-
-	// /SignedInfo/Reference/Transforms
-	transforms := ctx.createNamespacedElement(reference, TransformsTag)
-	if enveloped {
-		envelopedTransform := ctx.createNamespacedElement(transforms, TransformTag)
-		envelopedTransform.CreateAttr(AlgorithmAttr, EnvelopedSignatureAltorithmId.String())
-	}
-	canonicalizationAlgorithm := ctx.createNamespacedElement(transforms, TransformTag)
-	canonicalizationAlgorithm.CreateAttr(AlgorithmAttr, string(ctx.Canonicalizer.Algorithm()))
-
-	// /SignedInfo/Reference/DigestMethod
-	digestMethod := ctx.createNamespacedElement(reference, DigestMethodTag)
-	digestMethod.CreateAttr(AlgorithmAttr, digestAlgorithmIdentifier)
-
-	// /SignedInfo/Reference/DigestValue
-	digestValue := ctx.createNamespacedElement(reference, DigestValueTag)
-	digestValue.SetText(base64.StdEncoding.EncodeToString(digest))
 
 	return signedInfo, nil
 }
 
+func (ctx *SigningContext) ConstructSignatures(els []*etree.Element, enveloped bool) (*etree.Element, error) {
+	return ctx.ConstructSignatureRef(els, nil, enveloped)
+}
+
 func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool) (*etree.Element, error) {
-	signedInfo, err := ctx.constructSignedInfo(el, enveloped)
+	return ctx.ConstructSignatures([]*etree.Element { el }, enveloped)
+}
+
+func (ctx *SigningContext) ConstructSignatureRef(els []*etree.Element, keyRefElementDecorator func(*etree.Element), enveloped bool) (*etree.Element, error) {
+	signedInfo, err := ctx.constructSignedInfo(els, enveloped)
 	if err != nil {
 		return nil, err
 	}
@@ -142,13 +153,13 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 	// a series of cascading NSContexts to capture namespace declarations:
 
 	// First get the context surrounding the element we are signing.
-	rootNSCtx, err := etreeutils.NSBuildParentContext(el)
+	rootNSCtx, err := etreeutils.NSBuildParentContexts(els)
 	if err != nil {
 		return nil, err
 	}
 
 	// Then capture any declarations on the element itself.
-	elNSCtx, err := rootNSCtx.SubContext(el)
+	elNSCtx, err := rootNSCtx.SubContexts(els)
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +204,15 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 	signatureValue.SetText(base64.StdEncoding.EncodeToString(rawSignature))
 
 	keyInfo := ctx.createNamespacedElement(sig, KeyInfoTag)
-	x509Data := ctx.createNamespacedElement(keyInfo, X509DataTag)
-	for _, cert := range certs {
-		x509Certificate := ctx.createNamespacedElement(x509Data, X509CertificateTag)
-		x509Certificate.SetText(base64.StdEncoding.EncodeToString(cert))
+
+	if (keyRefElementDecorator == nil) {
+		x509Data := ctx.createNamespacedElement(keyInfo, X509DataTag)
+		for _, cert := range certs {
+			x509Certificate := ctx.createNamespacedElement(x509Data, X509CertificateTag)
+			x509Certificate.SetText(base64.StdEncoding.EncodeToString(cert))
+		}
+	} else {
+		keyRefElementDecorator(keyInfo)
 	}
 
 	return sig, nil
