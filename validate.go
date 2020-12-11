@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/beevik/etree"
 	"github.com/russellhaering/goxmldsig/etreeutils"
@@ -24,16 +25,30 @@ var (
 	ErrInvalidSignature = errors.New( "Invalid Signature")
 )
 
+// Clock represents anything capable of returning the current time stamp.
+type Clock interface {
+	// Now returns the current local time. See time package.
+	Now() time.Time
+}
+
+// Now returns the real current local time.
+func (rc realClock) Now() time.Time { return time.Now() }
+
+// realClock is the default implementation of the Clock interface that returns
+// the real current local time.
+type realClock struct{}
+
 type ValidationContext struct {
 	CertificateStore X509CertificateStore
 	IdAttribute      string
-	Clock            *Clock
+	Clock            Clock
 }
 
 func NewDefaultValidationContext(certificateStore X509CertificateStore) *ValidationContext {
 	return &ValidationContext{
 		CertificateStore: certificateStore,
 		IdAttribute:      DefaultIdAttr,
+		Clock:            realClock{},
 	}
 }
 
