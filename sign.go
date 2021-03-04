@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 
 	"github.com/beevik/etree"
 	"github.com/russellhaering/goxmldsig/etreeutils"
@@ -48,9 +49,12 @@ func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ctx.hash(canonical)
+}
 
+func (ctx *SigningContext) hash(data []byte) ([]byte, error) {
 	hash := ctx.Hash.New()
-	_, err = hash.Write(canonical)
+	_, err := hash.Write(data)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +62,7 @@ func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool) (*etree.Element, error) {
+func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, enveloped bool) (*etree.Element, error) {
 	digestAlgorithmIdentifier := ctx.GetDigestAlgorithmIdentifier()
 	if digestAlgorithmIdentifier == "" {
 		return nil, errors.New("unsupported hash mechanism")
@@ -67,11 +71,6 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 	signatureMethodIdentifier := ctx.GetSignatureMethodIdentifier()
 	if signatureMethodIdentifier == "" {
 		return nil, errors.New("unsupported signature method")
-	}
-
-	digest, err := ctx.digest(el)
-	if err != nil {
-		return nil, err
 	}
 
 	signedInfo := &etree.Element{
@@ -89,14 +88,7 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 
 	// /SignedInfo/Reference
 	reference := ctx.createNamespacedElement(signedInfo, ReferenceTag)
-
-	dataId := el.SelectAttrValue(ctx.IdAttribute, "")
-	if dataId == "" {
-		reference.CreateAttr(URIAttr, "")
-	} else {
-		reference.CreateAttr(URIAttr, "#"+dataId)
-	}
-
+	reference.CreateAttr(URIAttr, uri)
 
 	// /SignedInfo/Reference/Transforms
 	transforms := ctx.createNamespacedElement(reference, TransformsTag)
@@ -119,7 +111,18 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 }
 
 func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool) (*etree.Element, error) {
-	signedInfo, err := ctx.constructSignedInfo(el, enveloped)
+	digest, err := ctx.digest(el)
+	if err != nil {
+		return nil, err
+	}
+
+	dataId := el.SelectAttrValue(ctx.IdAttribute, "")
+	uri := ""
+	if dataId != "" {
+		uri = "#" + dataId
+	}
+
+	signedInfo, err := ctx.constructSignedInfo(digest, uri, enveloped)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +170,7 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 		return nil, err
 	}
 
-	digest, err := ctx.digest(detatchedSignedInfo)
+	digest, err = ctx.digest(detatchedSignedInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +210,20 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 	child := el.CreateElement(tag)
 	child.Space = ctx.Prefix
 	return child
+}
+
+func (ctx *SigningContext) SignEnvelopedReader(inputPath string) (*etree.Element, error) {
+	input, err := ioutil.ReadFile("./test.dat")
+	if err != nil {
+		panic(err)
+	}
+
+	digest, err := ctx.hash(input)
+	if err != nil {
+		panic(err)
+	}
+
+	return ctx.constructSignedInfo(digest, inputPath, true)
 }
 
 func (ctx *SigningContext) SignEnveloped(el *etree.Element) (*etree.Element, error) {
