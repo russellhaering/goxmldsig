@@ -45,6 +45,10 @@ func (ctx *SigningContext) SetSignatureMethod(algorithmID string) error {
 }
 
 func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
+	if ctx.GetDigestAlgorithmIdentifier() == "" {
+		return nil, errors.New("unsupported hash mechanism")
+	}
+
 	canonical, err := ctx.Canonicalizer.Canonicalize(el)
 	if err != nil {
 		return nil, err
@@ -64,10 +68,6 @@ func (ctx *SigningContext) hash(data []byte) ([]byte, error) {
 
 func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, enveloped bool) (*etree.Element, error) {
 	digestAlgorithmIdentifier := ctx.GetDigestAlgorithmIdentifier()
-	if digestAlgorithmIdentifier == "" {
-		return nil, errors.New("unsupported hash mechanism")
-	}
-
 	signatureMethodIdentifier := ctx.GetSignatureMethodIdentifier()
 	if signatureMethodIdentifier == "" {
 		return nil, errors.New("unsupported signature method")
