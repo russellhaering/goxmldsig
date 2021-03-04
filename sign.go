@@ -66,7 +66,7 @@ func (ctx *SigningContext) hash(data []byte) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, enveloped bool) (*etree.Element, error) {
+func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, enveloped bool, transform bool) (*etree.Element, error) {
 	digestAlgorithmIdentifier := ctx.GetDigestAlgorithmIdentifier()
 	signatureMethodIdentifier := ctx.GetSignatureMethodIdentifier()
 	if signatureMethodIdentifier == "" {
@@ -91,13 +91,15 @@ func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, envelo
 	reference.CreateAttr(URIAttr, uri)
 
 	// /SignedInfo/Reference/Transforms
-	transforms := ctx.createNamespacedElement(reference, TransformsTag)
-	if enveloped {
-		envelopedTransform := ctx.createNamespacedElement(transforms, TransformTag)
-		envelopedTransform.CreateAttr(AlgorithmAttr, EnvelopedSignatureAltorithmId.String())
+	if transform {
+		transforms := ctx.createNamespacedElement(reference, TransformsTag)
+		if enveloped {
+			envelopedTransform := ctx.createNamespacedElement(transforms, TransformTag)
+			envelopedTransform.CreateAttr(AlgorithmAttr, EnvelopedSignatureAltorithmId.String())
+		}
+		canonicalizationAlgorithm := ctx.createNamespacedElement(transforms, TransformTag)
+		canonicalizationAlgorithm.CreateAttr(AlgorithmAttr, string(ctx.Canonicalizer.Algorithm()))
 	}
-	canonicalizationAlgorithm := ctx.createNamespacedElement(transforms, TransformTag)
-	canonicalizationAlgorithm.CreateAttr(AlgorithmAttr, string(ctx.Canonicalizer.Algorithm()))
 
 	// /SignedInfo/Reference/DigestMethod
 	digestMethod := ctx.createNamespacedElement(reference, DigestMethodTag)
@@ -122,23 +124,12 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 		uri = "#" + dataId
 	}
 
-	signedInfo, err := ctx.constructSignedInfo(digest, uri, enveloped)
+	signedInfo, err := ctx.constructSignedInfo(digest, uri, enveloped, true)
 	if err != nil {
 		return nil, err
 	}
 
-	sig := &etree.Element{
-		Tag:   SignatureTag,
-		Space: ctx.Prefix,
-	}
-
-	xmlns := "xmlns"
-	if ctx.Prefix != "" {
-		xmlns += ":" + ctx.Prefix
-	}
-
-	sig.CreateAttr(xmlns, Namespace)
-	sig.AddChild(signedInfo)
+	sig := ctx.baseSig(signedInfo)
 
 	// When using xml-c14n11 (ie, non-exclusive canonicalization) the canonical form
 	// of the SignedInfo must declare all namespaces that are in scope at it's final
@@ -170,7 +161,28 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 		return nil, err
 	}
 
-	digest, err = ctx.digest(detatchedSignedInfo)
+	return ctx.constructSig(detatchedSignedInfo, sig)
+}
+
+func (ctx *SigningContext) baseSig(signedInfo *etree.Element) *etree.Element {
+	sig := &etree.Element{
+		Tag:   SignatureTag,
+		Space: ctx.Prefix,
+	}
+
+	xmlns := "xmlns"
+	if ctx.Prefix != "" {
+		xmlns += ":" + ctx.Prefix
+	}
+
+	sig.CreateAttr(xmlns, Namespace)
+	sig.AddChild(signedInfo)
+
+	return sig
+}
+
+func (ctx *SigningContext) constructSig(signedInfo *etree.Element, sig *etree.Element) (*etree.Element, error) {
+	digest, err := ctx.digest(signedInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +235,12 @@ func (ctx *SigningContext) SignEnvelopedReader(inputPath string) (*etree.Element
 		panic(err)
 	}
 
-	return ctx.constructSignedInfo(digest, inputPath, true)
+	signedInfo, err := ctx.constructSignedInfo(digest, inputPath, false, false)
+	if err != nil {
+		panic(err)
+	}
+
+	return ctx.constructSig(signedInfo, ctx.baseSig(signedInfo))
 }
 
 func (ctx *SigningContext) SignEnveloped(el *etree.Element) (*etree.Element, error) {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/beevik/etree"
 	dsig "github.com/russellhaering/goxmldsig"
 )
@@ -11,7 +13,7 @@ func main() {
 	ctx := dsig.NewDefaultSigningContext(randomKeyStore)
 
 	// Sign the element
-	signedElement, err := ctx.SignEnvelopedReader("./test.dat")
+	signedElement, err := ctx.SignEnvelopedReader(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
