@@ -75,6 +75,9 @@ func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, envelo
 	signedInfo := &etree.Element{
 		Tag:   SignedInfoTag,
 		Space: ctx.Prefix,
+		Attr: []etree.Attr{
+			{Key: "Id", Value: "S1-SignedInfo"},
+		},
 	}
 
 	// /SignedInfo/CanonicalizationMethod
@@ -87,6 +90,7 @@ func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, envelo
 
 	// /SignedInfo/Reference
 	reference := ctx.createNamespacedElement(signedInfo, ReferenceTag)
+	reference.CreateAttr("Id", "S1-ref-1")
 	reference.CreateAttr(URIAttr, uri)
 
 	// /SignedInfo/Reference/Transforms
@@ -164,20 +168,17 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 }
 
 func (ctx *SigningContext) baseSig(signedInfo *etree.Element) *etree.Element {
-	sig := &etree.Element{
+	return &etree.Element{
 		Tag:   SignatureTag,
 		Space: ctx.Prefix,
+		Attr: []etree.Attr{
+			{Space: "xmlns", Key: ctx.Prefix, Value: Namespace},
+			{Key: "Id", Value: "S1"},
+		},
+		Child: []etree.Token{
+			signedInfo,
+		},
 	}
-
-	xmlns := "xmlns"
-	if ctx.Prefix != "" {
-		xmlns += ":" + ctx.Prefix
-	}
-
-	sig.CreateAttr(xmlns, Namespace)
-	sig.AddChild(signedInfo)
-
-	return sig
 }
 
 func (ctx *SigningContext) constructSig(signedInfo *etree.Element, sig *etree.Element) (*etree.Element, error) {
@@ -221,6 +222,24 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 	child := el.CreateElement(tag)
 	child.Space = ctx.Prefix
 	return child
+}
+
+func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, error) {
+	sig := etree.NewElement("XAdESSignatures")
+	sig.Space = "asic"
+	sig.Attr = append(sig.Attr, etree.Attr{
+		Space: "xmlns",
+		Key:   "asic",
+		Value: "http://uri.etsi.org/02918/v1.2.1#",
+	})
+
+	dsig, err := ctx.SignEnvelopedReader(uri, input)
+	if err != nil {
+		return nil, err
+	}
+	sig.AddChild(dsig)
+
+	return sig, nil
 }
 
 func (ctx *SigningContext) SignEnvelopedReader(uri string, input []byte) (*etree.Element, error) {

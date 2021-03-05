@@ -26,12 +26,13 @@ func main() {
 		panic(err)
 	}
 
-	signedElement, err := ctx.SignEnvelopedReader(inputName, input)
+	signedElement, err := ctx.SignXAdES(inputName, input)
 	if err != nil {
 		panic(err)
 	}
 
 	doc := etree.NewDocument()
+	doc.CreateProcInst("xml", `version="1.0" encoding="UTF-8" standalone="no"`)
 	doc.SetRoot(signedElement)
 
 	edoc, err := os.Create(
@@ -44,6 +45,12 @@ func main() {
 	}
 	w := zip.NewWriter(edoc)
 
+	mimetype, err := w.Create("mimetype")
+	if err != nil {
+		panic(err)
+	}
+	mimetype.Write([]byte("application/vnd.etsi.asic-e+zip"))
+
 	{
 		f, err := w.Create("META-INF/manifest.xml")
 		if err != nil {
@@ -51,8 +58,20 @@ func main() {
 		}
 
 		root := etree.NewDocument()
+		root.CreateProcInst("xml", `version="1.0" encoding="UTF-8" standalone="no"`)
 		manifest := root.CreateElement("manifest")
 		manifest.Space = "manifest"
+		manifest.Attr = append(manifest.Attr, etree.Attr{
+			Space: "xmlns",
+			Key:   "manifest",
+			Value: "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0",
+		})
+
+		manifest.Attr = append(manifest.Attr, etree.Attr{
+			Space: "manifest",
+			Key:   "version",
+			Value: "1.2",
+		})
 
 		entry := manifest.CreateElement("file-entry")
 		entry.Space = "manifest"
@@ -74,10 +93,16 @@ func main() {
 			Key:   "full-path",
 			Value: path.Base(inputName),
 		})
+		mimetype := mime.TypeByExtension(inputName)
+		if mimetype == "" {
+			mimetype = map[string]string{
+				".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			}[path.Ext(inputName)]
+		}
 		fileEntry.Attr = append(fileEntry.Attr, etree.Attr{
 			Space: "manifest",
 			Key:   "media-type",
-			Value: mime.TypeByExtension(inputName),
+			Value: mimetype,
 		})
 
 		output, err := root.WriteToString()
