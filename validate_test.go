@@ -249,7 +249,6 @@ func TestValidateWithValid(t *testing.T) {
 	require.NotEmpty(t, el)
 }
 
-
 func TestValidateWithModified(t *testing.T) {
 	doc := etree.NewDocument()
 	err := doc.ReadFromBytes([]byte(modifiedToBeTodd))
@@ -268,7 +267,6 @@ func TestValidateWithModified(t *testing.T) {
 	require.Error(t, err)
 }
 
-
 func TestValidateWithModifiedAndSignatureEdited(t *testing.T) {
 	doc := etree.NewDocument()
 	err := doc.ReadFromBytes([]byte(spoofedAsTodd))
@@ -282,6 +280,9 @@ func TestValidateWithModifiedAndSignatureEdited(t *testing.T) {
 		Roots: []*x509.Certificate{cert},
 	}
 	vc := NewDefaultValidationContext(&certStore)
+
+	_, err = vc.findSignature(doc.Root())
+	require.Error(t, err)
 
 	_, err = vc.Validate(doc.Root())
 	require.Error(t, err)

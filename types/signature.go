@@ -72,11 +72,22 @@ type X509Certificate struct {
 	Data    string   `xml:",chardata"`
 }
 
+// Object element. See https://www.w3.org/TR/xmldsig-core/#sec-Object
+type Object struct {
+	XMLName  xml.Name `xml:"http://www.w3.org/2000/09/xmldsig# Object"`
+	ID       string   `xml:"Id,attr"`
+	MimeType string   `xml:"MimeType,attr"`
+	Encoding string   `xml:"Encoding,attr"`
+}
+
+// Signature element. See https://www.w3.org/TR/xmldsig-core/#sec-Signature
 type Signature struct {
 	XMLName        xml.Name        `xml:"http://www.w3.org/2000/09/xmldsig# Signature"`
 	SignedInfo     *SignedInfo     `xml:"SignedInfo"`
 	SignatureValue *SignatureValue `xml:"SignatureValue"`
 	KeyInfo        *KeyInfo        `xml:"KeyInfo"`
+	Object         *Object         `xml:"Object"`
+	ID             string          `xml:"Id"`
 	el             *etree.Element
 }
 
