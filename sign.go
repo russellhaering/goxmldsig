@@ -225,7 +225,7 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 }
 
 func (ctx *SigningContext) SignEnvelopedReader(inputPath string) (*etree.Element, error) {
-	input, err := ioutil.ReadFile("./test.dat")
+	input, err := ioutil.ReadFile(inputPath)
 	if err != nil {
 		panic(err)
 	}
