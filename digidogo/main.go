@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"os"
 
 	"github.com/beevik/etree"
@@ -13,7 +14,12 @@ func main() {
 	ctx := dsig.NewDefaultSigningContext(randomKeyStore)
 
 	// Sign the element
-	signedElement, err := ctx.SignEnvelopedReader(os.Args[1])
+	input, err := ioutil.ReadFile(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+
+	signedElement, err := ctx.SignEnvelopedReader(os.Args[1], input)
 	if err != nil {
 		panic(err)
 	}

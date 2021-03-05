@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
 
 	"github.com/beevik/etree"
 	"github.com/russellhaering/goxmldsig/etreeutils"
@@ -224,20 +223,15 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 	return child
 }
 
-func (ctx *SigningContext) SignEnvelopedReader(inputPath string) (*etree.Element, error) {
-	input, err := ioutil.ReadFile(inputPath)
-	if err != nil {
-		panic(err)
-	}
-
+func (ctx *SigningContext) SignEnvelopedReader(uri string, input []byte) (*etree.Element, error) {
 	digest, err := ctx.hash(input)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	signedInfo, err := ctx.constructSignedInfo(digest, inputPath, false, false)
+	signedInfo, err := ctx.constructSignedInfo(digest, uri, false, false)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return ctx.constructSig(signedInfo, ctx.baseSig(signedInfo))
