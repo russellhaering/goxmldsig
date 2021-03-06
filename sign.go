@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/beevik/etree"
 	"github.com/russellhaering/goxmldsig/etreeutils"
@@ -224,6 +225,98 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 	return child
 }
 
+func (ctx *SigningContext) xadesSigningCertificate() (*etree.Element, error) {
+	sigCert := &etree.Element{
+		Space: "xades",
+		Tag:   "SigningCertificate",
+	}
+
+	_, cert, err := ctx.KeyStore.GetKeyPair()
+	if err != nil {
+		return nil, err
+	}
+
+	h, err := ctx.hash(cert)
+	if err != nil {
+		return nil, err
+	}
+	sigCert.Child = append(sigCert.Child,
+		&etree.Element{
+			Space: "xades",
+			Tag:   "Cert",
+			Child: []etree.Token{
+				&etree.Element{
+					Space: "xades",
+					Tag:   "CertDigest",
+					Child: []etree.Token{
+						&etree.Element{
+							Space: "ds",
+							Tag:   "DigestMethod",
+							Attr: []etree.Attr{
+								{Key: "Algorithm", Value: "http://www.w3.org/2001/04/xmlenc#sha256"},
+							},
+						},
+						&etree.Element{
+							Space: "ds",
+							Tag:   "DigestValue",
+							Child: []etree.Token{
+								&etree.CharData{Data: base64.StdEncoding.EncodeToString(h)},
+							},
+						},
+					},
+				},
+				&etree.Element{
+					Space: "xades",
+					Tag:   "IssuerSerial",
+					Child: []etree.Token{
+						&etree.Element{
+							Space: "ds",
+							Tag:   "X509IssuerName",
+							Child: []etree.Token{
+								&etree.CharData{Data: "CN=,O=,C="},
+							},
+						},
+						&etree.Element{
+							Space: "ds",
+							Tag:   "X509IssuerSerialNumber",
+							Child: []etree.Token{
+								&etree.CharData{Data: "serialnumber"},
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	return sigCert, nil
+}
+
+func (ctx *SigningContext) xadesSignedSignatureProperties() (*etree.Element, error) {
+	sigCert, err := ctx.xadesSigningCertificate()
+	if err != nil {
+		return nil, err
+	}
+
+	return &etree.Element{
+		Space: "xades",
+		Tag:   "SignedSignatureProperties",
+		Attr: []etree.Attr{
+			{Key: "Id", Value: "S1-SignedSignatureProperties"},
+		},
+		Child: []etree.Token{
+			&etree.Element{
+				Space: "xades",
+				Tag:   "SigningTime",
+				Child: []etree.Token{
+					&etree.CharData{Data: time.Now().Format(time.RFC3339)},
+				},
+			},
+			sigCert,
+		},
+	}, nil
+}
+
 func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, error) {
 	sig := etree.NewElement("XAdESSignatures")
 	sig.Space = "asic"
@@ -237,6 +330,39 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 	if err != nil {
 		return nil, err
 	}
+
+	sigProp, err := ctx.xadesSignedSignatureProperties()
+	if err != nil {
+		return nil, err
+	}
+
+	dsig.AddChild(&etree.Element{
+		Space: "ds",
+		Tag:   "Object",
+		Child: []etree.Token{
+			&etree.Element{
+				Space: "xades",
+				Tag:   "QualifyingProperties",
+				Attr: []etree.Attr{
+					{Space: "xmlns", Key: "xades", Value: "http://uri.etsi.org/01903/v1.3.2#"},
+					{Key: "Id", Value: "S1-QualifyingProperties"},
+					{Key: "Target", Value: "#S1"},
+				},
+				Child: []etree.Token{
+					&etree.Element{
+						Space: "xades",
+						Tag:   "SignedProperties",
+						Attr: []etree.Attr{
+							{Key: "Id", Value: "S1-SignedProperties"},
+						},
+						Child: []etree.Token{
+							sigProp,
+						},
+					},
+				},
+			},
+		},
+	})
 	sig.AddChild(dsig)
 
 	return sig, nil
