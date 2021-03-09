@@ -313,6 +313,94 @@ func (ctx *SigningContext) xadesSignedSignatureProperties() (*etree.Element, err
 				},
 			},
 			sigCert,
+			&etree.Element{
+				Space: "xades",
+				Tag:   "SignatureProductionPlace",
+			},
+			&etree.Element{
+				Space: "xades",
+				Tag:   "SignerRole",
+				Child: []etree.Token{
+					&etree.Element{
+						Space: "xades",
+						Tag:   "ClaimedRoles",
+						Child: []etree.Token{
+							&etree.Element{
+								Space: "xades",
+								Tag:   "ClaimedRole",
+							},
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
+func (ctx *SigningContext) xadesUnsignedSignatureProperties() (*etree.Element, error) {
+	return &etree.Element{
+		Space: "xades",
+		Tag:   "UnsignedProperties",
+		Attr: []etree.Attr{
+			{Key: "Id", Value: "S1-UnsignedProperties"},
+		},
+		Child: []etree.Token{
+			&etree.Element{
+				Space: "xades",
+				Tag:   "UnsignedSignatureProperties",
+				Attr: []etree.Attr{
+					{Key: "Id", Value: "S1-UnsignedSignatureProperties"},
+				},
+				Child: []etree.Token{
+					&etree.Element{
+						Space: "xades",
+						Tag:   "SignatureTimeStamp",
+						Attr: []etree.Attr{
+							{Key: "Id", Value: "S1-ts-0"},
+						},
+						Child: []etree.Token{
+							&etree.Element{
+								Space: "ds",
+								Tag:   "CanonicalizationMethod",
+								Attr: []etree.Attr{
+									{Key: "Algorithm", Value: "http://www.w3.org/2006/12/xml-c14n11"},
+								},
+								Child: []etree.Token{},
+							},
+							&etree.Element{
+								Space: "xades",
+								Tag:   "EncapsulatedTimeStamp",
+								Attr:  []etree.Attr{},
+								Child: []etree.Token{
+									&etree.CharData{Data: "Some cool hash"},
+								},
+							},
+						},
+					},
+					&etree.Element{
+						Space: "xades",
+						Tag:   "RevocationValues",
+						Attr:  []etree.Attr{},
+						Child: []etree.Token{
+							&etree.Element{
+								Space: "xades",
+								Tag:   "OCSPValues",
+								Attr:  []etree.Attr{},
+								Child: []etree.Token{
+									&etree.Element{
+										Space: "xades",
+										Tag:   "EncapsulatedOCSPValue",
+										Attr:  []etree.Attr{},
+										Child: []etree.Token{
+											&etree.CharData{Data: "Some cool hash"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}, nil
 }
@@ -332,6 +420,34 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 	}
 
 	sigProp, err := ctx.xadesSignedSignatureProperties()
+	if err != nil {
+		return nil, err
+	}
+
+	sigObjProp := &etree.Element{
+		Space: "xades",
+		Tag:   "SignedDataObjectProperties",
+		Child: []etree.Token{
+			&etree.Element{
+				Space: "xades",
+				Tag:   "DataObjectFormat",
+				Attr: []etree.Attr{
+					{Key: "ObjectReference", Value: "#S1-ref-1"},
+				},
+				Child: []etree.Token{
+					&etree.Element{
+						Space: "xades",
+						Tag:   "MimeType",
+						Child: []etree.Token{
+							&etree.CharData{Data: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	unsigProps, err := ctx.xadesUnsignedSignatureProperties()
 	if err != nil {
 		return nil, err
 	}
@@ -356,9 +472,10 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 							{Key: "Id", Value: "S1-SignedProperties"},
 						},
 						Child: []etree.Token{
-							sigProp,
+							sigProp, sigObjProp,
 						},
 					},
+					unsigProps,
 				},
 			},
 		},
