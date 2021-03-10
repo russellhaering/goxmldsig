@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	_ "crypto/sha1"
 	_ "crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/russellhaering/goxmldsig/etreeutils"
+	"github.com/russellhaering/goxmldsig/rfc3161"
 )
 
 type SigningContext struct {
@@ -240,6 +242,12 @@ func (ctx *SigningContext) xadesSigningCertificate() (*etree.Element, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	x509Cert, err := x509.ParseCertificate(cert)
+	if err != nil {
+		return nil, err
+	}
+
 	sigCert.Child = append(sigCert.Child,
 		&etree.Element{
 			Space: "xades",
@@ -273,14 +281,14 @@ func (ctx *SigningContext) xadesSigningCertificate() (*etree.Element, error) {
 							Space: "ds",
 							Tag:   "X509IssuerName",
 							Child: []etree.Token{
-								&etree.CharData{Data: "CN=,O=,C="},
+								&etree.CharData{Data: x509Cert.Issuer.CommonName},
 							},
 						},
 						&etree.Element{
 							Space: "ds",
 							Tag:   "X509IssuerSerialNumber",
 							Child: []etree.Token{
-								&etree.CharData{Data: "serialnumber"},
+								&etree.CharData{Data: x509Cert.Issuer.SerialNumber},
 							},
 						},
 					},
@@ -337,7 +345,12 @@ func (ctx *SigningContext) xadesSignedSignatureProperties() (*etree.Element, err
 	}, nil
 }
 
-func (ctx *SigningContext) xadesUnsignedSignatureProperties() (*etree.Element, error) {
+func (ctx *SigningContext) xadesUnsignedSignatureProperties(signature []byte) (*etree.Element, error) {
+	timestamp, err := rfc3161.Timestamp(signature, rfc3161.TsaFreeTsa)
+	if err != nil {
+		return nil, err
+	}
+
 	return &etree.Element{
 		Space: "xades",
 		Tag:   "UnsignedProperties",
@@ -372,7 +385,7 @@ func (ctx *SigningContext) xadesUnsignedSignatureProperties() (*etree.Element, e
 								Tag:   "EncapsulatedTimeStamp",
 								Attr:  []etree.Attr{},
 								Child: []etree.Token{
-									&etree.CharData{Data: "Some cool hash"},
+									&etree.CharData{Data: *timestamp},
 								},
 							},
 						},
@@ -419,6 +432,13 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 		return nil, err
 	}
 
+	rawSig, err := base64.StdEncoding.DecodeString(
+		dsig.FindElementPath(etree.MustCompilePath("//" + SignatureValueTag)).Text(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	sigProp, err := ctx.xadesSignedSignatureProperties()
 	if err != nil {
 		return nil, err
@@ -447,7 +467,7 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 		},
 	}
 
-	unsigProps, err := ctx.xadesUnsignedSignatureProperties()
+	unsigProps, err := ctx.xadesUnsignedSignatureProperties(rawSig)
 	if err != nil {
 		return nil, err
 	}
