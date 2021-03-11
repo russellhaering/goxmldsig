@@ -1,6 +1,7 @@
 package dsig
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -10,11 +11,15 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/beevik/etree"
 	"github.com/russellhaering/goxmldsig/etreeutils"
 	"github.com/russellhaering/goxmldsig/rfc3161"
+	"golang.org/x/crypto/ocsp"
 )
 
 type SigningContext struct {
@@ -227,23 +232,56 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 	return child
 }
 
-func (ctx *SigningContext) xadesSigningCertificate() (*etree.Element, error) {
+func oscpResponse(x509Cert *x509.Certificate) ([]byte, error) {
+	if len(x509Cert.OCSPServer) == 0 {
+		return nil, nil
+	}
+	for _, ocspServer := range x509Cert.OCSPServer {
+		x509IssuerCert, err := x509.ParseCertificate(x509Cert.RawIssuer)
+		if err != nil {
+			return nil, err
+		}
+
+		ocspReq, err := ocsp.CreateRequest(x509Cert, x509IssuerCert, &ocsp.RequestOptions{Hash: crypto.SHA1})
+		if err != nil {
+			return nil, err
+		}
+
+		httpRequest, err := http.NewRequest(http.MethodPost, ocspServer, bytes.NewBuffer(ocspReq))
+		if err != nil {
+			return nil, err
+		}
+		ocspUrl, err := url.Parse(ocspServer)
+		if err != nil {
+			return nil, err
+		}
+		httpRequest.Header.Add("Content-Type", "application/ocsp-request")
+		httpRequest.Header.Add("Accept", "application/ocsp-response")
+		httpRequest.Header.Add("host", ocspUrl.Host)
+		httpClient := &http.Client{}
+		httpResponse, err := httpClient.Do(httpRequest)
+		if err != nil {
+			return nil, err
+		}
+		if httpResponse.StatusCode == http.StatusOK {
+			defer httpResponse.Body.Close()
+			output, err := ioutil.ReadAll(httpResponse.Body)
+			if err != nil {
+				return nil, err
+			}
+			return output, nil
+		}
+	}
+	return nil, errors.New("All OSCP Servers failed")
+}
+
+func (ctx *SigningContext) xadesSigningCertificate(x509Cert *x509.Certificate) (*etree.Element, error) {
 	sigCert := &etree.Element{
 		Space: "xades",
 		Tag:   "SigningCertificate",
 	}
 
-	_, cert, err := ctx.KeyStore.GetKeyPair()
-	if err != nil {
-		return nil, err
-	}
-
-	h, err := ctx.hash(cert)
-	if err != nil {
-		return nil, err
-	}
-
-	x509Cert, err := x509.ParseCertificate(cert)
+	h, err := ctx.hash(x509Cert.Raw)
 	if err != nil {
 		return nil, err
 	}
@@ -300,8 +338,8 @@ func (ctx *SigningContext) xadesSigningCertificate() (*etree.Element, error) {
 	return sigCert, nil
 }
 
-func (ctx *SigningContext) xadesSignedSignatureProperties() (*etree.Element, error) {
-	sigCert, err := ctx.xadesSigningCertificate()
+func (ctx *SigningContext) xadesSignedSignatureProperties(x509Cert *x509.Certificate) (*etree.Element, error) {
+	sigCert, err := ctx.xadesSigningCertificate(x509Cert)
 	if err != nil {
 		return nil, err
 	}
@@ -345,13 +383,36 @@ func (ctx *SigningContext) xadesSignedSignatureProperties() (*etree.Element, err
 	}, nil
 }
 
-func (ctx *SigningContext) xadesUnsignedSignatureProperties(signature []byte) (*etree.Element, error) {
+func (ctx *SigningContext) xadesUnsignedSignatureProperties(signature, ocspResponse []byte) (*etree.Element, error) {
 	timestamp, err := rfc3161.Timestamp(signature, rfc3161.TsaFreeTsa)
 	if err != nil {
 		return nil, err
 	}
 
-	return &etree.Element{
+	revokeVal := &etree.Element{
+		Space: "xades",
+		Tag:   "RevocationValues",
+		Attr:  []etree.Attr{},
+		Child: []etree.Token{
+			&etree.Element{
+				Space: "xades",
+				Tag:   "OCSPValues",
+				Attr:  []etree.Attr{},
+				Child: []etree.Token{
+					&etree.Element{
+						Space: "xades",
+						Tag:   "EncapsulatedOCSPValue",
+						Attr:  []etree.Attr{},
+						Child: []etree.Token{
+							&etree.CharData{Data: base64.StdEncoding.EncodeToString(ocspResponse)},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ele := &etree.Element{
 		Space: "xades",
 		Tag:   "UnsignedProperties",
 		Attr: []etree.Attr{
@@ -390,35 +451,21 @@ func (ctx *SigningContext) xadesUnsignedSignatureProperties(signature []byte) (*
 							},
 						},
 					},
-					&etree.Element{
-						Space: "xades",
-						Tag:   "RevocationValues",
-						Attr:  []etree.Attr{},
-						Child: []etree.Token{
-							&etree.Element{
-								Space: "xades",
-								Tag:   "OCSPValues",
-								Attr:  []etree.Attr{},
-								Child: []etree.Token{
-									&etree.Element{
-										Space: "xades",
-										Tag:   "EncapsulatedOCSPValue",
-										Attr:  []etree.Attr{},
-										Child: []etree.Token{
-											&etree.CharData{Data: "Some cool hash"},
-										},
-									},
-								},
-							},
-						},
-					},
 				},
 			},
 		},
-	}, nil
+	}
+
+	if ocspResponse != nil {
+		ele.FindElementPath(
+			etree.MustCompilePath("//UnsignedSignatureProperties"),
+		).AddChild(revokeVal)
+	}
+
+	return ele, nil
 }
 
-func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, error) {
+func (ctx *SigningContext) SignXAdES(uri string, mimetype string, input []byte) (*etree.Element, error) {
 	sig := etree.NewElement("XAdESSignatures")
 	sig.Space = "asic"
 	sig.Attr = append(sig.Attr, etree.Attr{
@@ -426,6 +473,16 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 		Key:   "asic",
 		Value: "http://uri.etsi.org/02918/v1.2.1#",
 	})
+
+	_, cert, err := ctx.KeyStore.GetKeyPair()
+	if err != nil {
+		return nil, err
+	}
+
+	x509Cert, err := x509.ParseCertificate(cert)
+	if err != nil {
+		return nil, err
+	}
 
 	dsig, err := ctx.SignEnvelopedReader(uri, input)
 	if err != nil {
@@ -439,7 +496,7 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 		return nil, err
 	}
 
-	sigProp, err := ctx.xadesSignedSignatureProperties()
+	sigProp, err := ctx.xadesSignedSignatureProperties(x509Cert)
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +516,7 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 						Space: "xades",
 						Tag:   "MimeType",
 						Child: []etree.Token{
-							&etree.CharData{Data: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+							&etree.CharData{Data: mimetype},
 						},
 					},
 				},
@@ -467,10 +524,56 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 		},
 	}
 
-	unsigProps, err := ctx.xadesUnsignedSignatureProperties(rawSig)
+	oscpRes, err := oscpResponse(x509Cert)
 	if err != nil {
 		return nil, err
 	}
+
+	unsigProps, err := ctx.xadesUnsignedSignatureProperties(rawSig, oscpRes)
+	if err != nil {
+		return nil, err
+	}
+
+	sigProps := &etree.Element{
+		Space: "xades",
+		Tag:   "SignedProperties",
+		Attr: []etree.Attr{
+			{Key: "Id", Value: "S1-SignedProperties"},
+		},
+		Child: []etree.Token{
+			sigProp, sigObjProp,
+		},
+	}
+	sigDigest, err := ctx.digest(sigProps)
+	if err != nil {
+		return nil, err
+	}
+
+	dsig.FindElementPath(etree.MustCompilePath("//SignedInfo")).AddChild(&etree.Element{
+		Space: "ds",
+		Tag:   "Reference",
+		Attr: []etree.Attr{
+			{Key: "Id", Value: "S1-ref-SignedProperties"},
+			{Key: "Type", Value: "http://uri.etsi.org/01903#SignedProperties"},
+			{Key: "URI", Value: "#S1-SignedProperties"},
+		},
+		Child: []etree.Token{
+			&etree.Element{
+				Space: "ds",
+				Tag:   "DigestMethod",
+				Attr: []etree.Attr{
+					{Key: "Algorithm", Value: "http://www.w3.org/2001/04/xmlenc#sha256"},
+				},
+			},
+			&etree.Element{
+				Space: "ds",
+				Tag:   "DigestValue",
+				Child: []etree.Token{
+					&etree.CharData{Data: base64.StdEncoding.EncodeToString(sigDigest)},
+				},
+			},
+		},
+	})
 
 	dsig.AddChild(&etree.Element{
 		Space: "ds",
@@ -485,17 +588,7 @@ func (ctx *SigningContext) SignXAdES(uri string, input []byte) (*etree.Element, 
 					{Key: "Target", Value: "#S1"},
 				},
 				Child: []etree.Token{
-					&etree.Element{
-						Space: "xades",
-						Tag:   "SignedProperties",
-						Attr: []etree.Attr{
-							{Key: "Id", Value: "S1-SignedProperties"},
-						},
-						Child: []etree.Token{
-							sigProp, sigObjProp,
-						},
-					},
-					unsigProps,
+					sigProps, unsigProps,
 				},
 			},
 		},

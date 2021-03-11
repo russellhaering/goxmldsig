@@ -15,6 +15,12 @@ import (
 
 func main() {
 	inputName := os.Args[1]
+	mimetype := mime.TypeByExtension(inputName)
+	if mimetype == "" {
+		mimetype = map[string]string{
+			".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		}[path.Ext(inputName)]
+	}
 
 	// Generate a key and self-signed certificate for signing
 	randomKeyStore := dsig.RandomKeyStoreForTest()
@@ -26,7 +32,7 @@ func main() {
 		panic(err)
 	}
 
-	signedElement, err := ctx.SignXAdES(inputName, input)
+	signedElement, err := ctx.SignXAdES(path.Base(inputName), mimetype, input)
 	if err != nil {
 		panic(err)
 	}
@@ -45,11 +51,11 @@ func main() {
 	}
 	w := zip.NewWriter(edoc)
 
-	mimetype, err := w.Create("mimetype")
+	mimetypeFile, err := w.Create("mimetype")
 	if err != nil {
 		panic(err)
 	}
-	mimetype.Write([]byte("application/vnd.etsi.asic-e+zip"))
+	mimetypeFile.Write([]byte("application/vnd.etsi.asic-e+zip"))
 
 	{
 		f, err := w.Create("META-INF/manifest.xml")
@@ -93,12 +99,6 @@ func main() {
 			Key:   "full-path",
 			Value: path.Base(inputName),
 		})
-		mimetype := mime.TypeByExtension(inputName)
-		if mimetype == "" {
-			mimetype = map[string]string{
-				".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-			}[path.Ext(inputName)]
-		}
 		fileEntry.Attr = append(fileEntry.Attr, etree.Attr{
 			Space: "manifest",
 			Key:   "media-type",
