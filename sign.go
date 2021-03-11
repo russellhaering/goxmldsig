@@ -299,7 +299,7 @@ func (ctx *SigningContext) xadesSigningCertificate(x509Cert *x509.Certificate) (
 							Space: "ds",
 							Tag:   "DigestMethod",
 							Attr: []etree.Attr{
-								{Key: "Algorithm", Value: "http://www.w3.org/2001/04/xmlenc#sha256"},
+								{Key: "Algorithm", Value: ctx.GetDigestAlgorithmIdentifier()},
 							},
 						},
 						&etree.Element{
@@ -437,7 +437,7 @@ func (ctx *SigningContext) xadesUnsignedSignatureProperties(signature, ocspRespo
 								Space: "ds",
 								Tag:   "CanonicalizationMethod",
 								Attr: []etree.Attr{
-									{Key: "Algorithm", Value: "http://www.w3.org/2006/12/xml-c14n11"},
+									{Key: "Algorithm", Value: string(ctx.Canonicalizer.Algorithm())},
 								},
 								Child: []etree.Token{},
 							},
@@ -562,7 +562,7 @@ func (ctx *SigningContext) SignXAdES(uri string, mimetype string, input []byte) 
 				Space: "ds",
 				Tag:   "DigestMethod",
 				Attr: []etree.Attr{
-					{Key: "Algorithm", Value: "http://www.w3.org/2001/04/xmlenc#sha256"},
+					{Key: "Algorithm", Value: ctx.GetDigestAlgorithmIdentifier()},
 				},
 			},
 			&etree.Element{
