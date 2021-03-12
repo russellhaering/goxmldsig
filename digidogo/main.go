@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"crypto/x509"
 	"io/ioutil"
 	"log"
 	"mime"
@@ -25,6 +26,17 @@ func main() {
 	// Generate a key and self-signed certificate for signing
 	randomKeyStore := dsig.RandomKeyStoreForTest()
 	ctx := dsig.NewDefaultSigningContext(randomKeyStore)
+	_, cert, err := randomKeyStore.GetKeyPair()
+	if err != nil {
+		panic(err)
+	}
+	root, err := x509.ParseCertificate(cert)
+	if err != nil {
+		panic(err)
+	}
+	validCtx := dsig.NewDefaultValidationContext(&dsig.MemoryX509CertificateStore{
+		Roots: []*x509.Certificate{root},
+	})
 
 	// Sign the element
 	input, err := ioutil.ReadFile(os.Args[1])
@@ -34,6 +46,10 @@ func main() {
 
 	signedElement, err := ctx.SignXAdES(path.Base(inputName), mimetype, input)
 	if err != nil {
+		panic(err)
+	}
+	if _, err := validCtx.Validate(signedElement); err != nil {
+		log.Fatal("Failed Validation ", err)
 		panic(err)
 	}
 
