@@ -191,7 +191,7 @@ func TestSigningContext_SignXAdES(t *testing.T) {
 				Prefix:        DefaultPrefix,
 				Canonicalizer: MakeC14N11Canonicalizer(),
 			}
-			_, err := ctx.SignXAdES(tt.args.uri, tt.args.input)
+			_, err := ctx.SignXAdES(tt.args.uri, "mime/fake", tt.args.input)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("SigningContext.SignXAdES() error = %v, wantErr %v", err, tt.wantErr)
 				return
