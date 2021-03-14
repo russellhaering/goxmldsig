@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 
 	"github.com/beevik/etree"
@@ -21,7 +22,7 @@ var (
 	// ErrMissingSignature indicates that no enveloped signature was found referencing
 	// the top level element passed for signature verification.
 	ErrMissingSignature = errors.New("Missing signature referencing the top-level element")
-	ErrInvalidSignature = errors.New( "Invalid Signature")
+	ErrInvalidSignature = errors.New("Invalid Signature")
 )
 
 type ValidationContext struct {
@@ -230,58 +231,73 @@ func (ctx *ValidationContext) verifySignedInfo(sig *types.Signature, canonicaliz
 }
 
 func (ctx *ValidationContext) validateSignature(el *etree.Element, sig *types.Signature, cert *x509.Certificate) (*etree.Element, error) {
-	idAttrEl := el.SelectAttr(ctx.IdAttribute)
-	idAttr := ""
-	if idAttrEl != nil {
-		idAttr = idAttrEl.Value
-	}
-
-	var ref *types.Reference
-
+	transformed := el.Copy()
 	// Find the first reference which references the top-level element
-	for _, _ref := range sig.SignedInfo.References {
-		if _ref.URI == "" || _ref.URI[1:] == idAttr {
-			ref = &_ref
+	for _, ref := range sig.SignedInfo.References {
+		// Perform all transformations listed in the 'SignedInfo'
+		// Basically, this means removing the 'SignedInfo'
+		transformed, canonicalizer, err := ctx.transform(el, sig, &ref)
+		if err != nil {
+			return nil, err
+		}
+
+		referencedEl := transformed
+		if ref.URI != "" {
+			var rawPath string
+
+			switch ref.URI[0] {
+			case '/':
+				rawPath = ref.URI
+			case '#':
+				rawPath = "//*[@" + ctx.IdAttribute + "='" + ref.URI[1:] + "']"
+			default:
+				log.Printf("WARNING: Signature was not checked. Unsupported URI: " + ref.URI)
+				continue
+			}
+			path, err := etree.CompilePath(rawPath)
+			if err != nil {
+				return nil, err
+			}
+			root := &etree.Element{
+				Tag:   "root",
+				Child: []etree.Token{transformed},
+			}
+			referencedEl = root.FindElementPath(path)
+			if referencedEl == nil {
+				return nil, errors.New("Error implementing etree: " + rawPath)
+			}
+		}
+
+		digestAlgorithm := ref.DigestAlgo.Algorithm
+
+		// Digest the transformed XML and compare it to the 'DigestValue' from the 'SignedInfo'
+		digest, err := ctx.digest(referencedEl, digestAlgorithm, canonicalizer)
+		if err != nil {
+			return nil, err
+		}
+
+		decodedDigestValue, err := base64.StdEncoding.DecodeString(ref.DigestValue)
+		if err != nil {
+			return nil, err
+		}
+
+		if !bytes.Equal(digest, decodedDigestValue) {
+			return nil, errors.New("Signature could not be verified for '" + ref.URI + "'")
+		}
+
+		// Decode the 'SignatureValue' so we can compare against it
+		decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
+		if err != nil {
+			return nil, errors.New("Could not decode signature")
+		}
+
+		// Actually verify the 'SignedInfo' was signed by a trusted source
+		signatureMethod := sig.SignedInfo.SignatureMethod.Algorithm
+		err = ctx.verifySignedInfo(sig, canonicalizer, signatureMethod, cert, decodedSignature)
+		if err != nil {
+			return nil, err
 		}
 	}
-
-	// Perform all transformations listed in the 'SignedInfo'
-	// Basically, this means removing the 'SignedInfo'
-	transformed, canonicalizer, err := ctx.transform(el, sig, ref)
-	if err != nil {
-		return nil, err
-	}
-
-	digestAlgorithm := ref.DigestAlgo.Algorithm
-
-	// Digest the transformed XML and compare it to the 'DigestValue' from the 'SignedInfo'
-	digest, err := ctx.digest(transformed, digestAlgorithm, canonicalizer)
-	if err != nil {
-		return nil, err
-	}
-
-	decodedDigestValue, err := base64.StdEncoding.DecodeString(ref.DigestValue)
-	if err != nil {
-		return nil, err
-	}
-
-	if !bytes.Equal(digest, decodedDigestValue) {
-		return nil, errors.New("Signature could not be verified")
-	}
-
-	// Decode the 'SignatureValue' so we can compare against it
-	decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
-	if err != nil {
-		return nil, errors.New("Could not decode signature")
-	}
-
-	// Actually verify the 'SignedInfo' was signed by a trusted source
-	signatureMethod := sig.SignedInfo.SignatureMethod.Algorithm
-	err = ctx.verifySignedInfo(sig, canonicalizer, signatureMethod, cert, decodedSignature)
-	if err != nil {
-		return nil, err
-	}
-
 	return transformed, nil
 }
 
