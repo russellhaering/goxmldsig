@@ -2,7 +2,10 @@ package dsig
 
 import (
 	"crypto"
+	_ "crypto/sha1"
+	_ "crypto/sha256"
 	"encoding/base64"
+	"reflect"
 	"testing"
 
 	"github.com/beevik/etree"
@@ -125,4 +128,74 @@ func TestSignNonDefaultID(t *testing.T) {
 	require.NotNil(t, ref)
 	refURI := ref.SelectAttrValue("URI", "")
 	require.Equal(t, refURI, "#"+id)
+}
+
+func TestSigningContext_SignEnvelopedReader(t *testing.T) {
+	type args struct {
+		uri   string
+		input []byte
+	}
+	tests := []struct {
+		name     string
+		args     args
+		wantHash string
+		wantErr  bool
+	}{
+		{"Empty", args{"", []byte("")}, "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", false},
+		{"Empty", args{"", []byte("asdasdasdasd")}, "ZrETKgFzkQsB7joV705pWDu/L38eRGLJnvvhuatb+Ag=", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &SigningContext{
+				Hash:          crypto.SHA256,
+				KeyStore:      RandomKeyStoreForTest(),
+				IdAttribute:   "OtherID",
+				Prefix:        DefaultPrefix,
+				Canonicalizer: MakeC14N11Canonicalizer(),
+			}
+			got, err := ctx.SignEnvelopedReader(tt.args.uri, tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SigningContext.SignEnvelopedReader() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			gotEle := got.FindElement("//DigestValue")
+			if gotEle == nil {
+				t.Error(got)
+			}
+			gotHash := gotEle.Text()
+			if !reflect.DeepEqual(gotHash, tt.wantHash) {
+				t.Errorf("SigningContext.SignEnvelopedReader() = %v, want %v", gotHash, tt.wantHash)
+			}
+		})
+	}
+}
+
+func TestSigningContext_SignXAdES(t *testing.T) {
+	type args struct {
+		uri   string
+		input []byte
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{"Empty", args{"./fake", []byte("")}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &SigningContext{
+				Hash:          crypto.SHA256,
+				KeyStore:      RandomKeyStoreForTest(),
+				IdAttribute:   "OtherID",
+				Prefix:        DefaultPrefix,
+				Canonicalizer: MakeC14N11Canonicalizer(),
+			}
+			_, err := ctx.SignXAdES(tt.args.uri, "mime/fake", tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SigningContext.SignXAdES() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
 }
