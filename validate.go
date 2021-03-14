@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 
 	"github.com/beevik/etree"
@@ -230,85 +231,94 @@ func (ctx *ValidationContext) verifySignedInfo(sig *types.Signature, canonicaliz
 }
 
 func (ctx *ValidationContext) validateSignature(el *etree.Element, sig *types.Signature, cert *x509.Certificate) (*etree.Element, error) {
-	refID := ""
-	if sig.Object != nil {
-		refID = sig.Object.ID
+	if el == nil {
+		el = sig.UnderlyingElement().Copy()
 	} else {
-		idAttr := el.SelectAttr(ctx.IdAttribute)
-		if idAttr == nil || idAttr.Value == "" {
-			return nil, errors.New("Missing ID attribute")
-		}
-		refID = idAttr.Value
+		el = el.Copy()
 	}
 
-	var ref *types.Reference
-
-	// Find the first reference which references the top-level element
-	for _, _ref := range sig.SignedInfo.References {
-		if _ref.URI == "" || _ref.URI[1:] == refID {
-			ref = &_ref
-		}
+	root := &etree.Element{
+		Tag:   "root",
+		Child: []etree.Token{el},
 	}
 
+	// Iterate through all references
 	var transformed *etree.Element
-	var canonicalizer Canonicalizer
-	var err error
-	if sig.Object != nil {
-		objectElement := sig.UnderlyingElement().FindElement("Object")
-		transformed = objectElement
-		if transformed == nil {
-			return nil, errors.New("Error implementing etree")
+	for _, ref := range sig.SignedInfo.References {
+		var canonicalizer Canonicalizer
+		var err error
+
+		if ref.URI != "" {
+			var rawPath string
+
+			switch ref.URI[0] {
+			case '/':
+				rawPath = ref.URI
+			case '#':
+				rawPath = "//*[@" + ctx.IdAttribute + "='" + ref.URI[1:] + "']"
+			default:
+				log.Printf("WARNING: Signature not checked. Unsupported URI: " + ref.URI)
+				continue
+			}
+			path, err := etree.CompilePath(rawPath)
+			if err != nil {
+				return nil, err
+			}
+
+			transformed = root.FindElementPath(path)
+			if transformed == nil {
+				return nil, errors.New("Error implementing etree: " + rawPath)
+			}
+			transformed, canonicalizer, err = ctx.transform(transformed, sig, &ref)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			transformed, canonicalizer, err = ctx.transform(el, sig, &ref)
+			if err != nil {
+				return nil, err
+			}
 		}
-		switch AlgorithmID(sig.SignedInfo.CanonicalizationMethod.Algorithm) {
-		case CanonicalXML11AlgorithmId:
-			canonicalizer = MakeC14N11Canonicalizer()
-			break
-		case CanonicalXML10RecAlgorithmId:
-			canonicalizer = MakeC14N10RecCanonicalizer()
-			break
-		case CanonicalXML10CommentAlgorithmId:
-			canonicalizer = MakeC14N10CommentCanonicalizer()
-			break
-		default:
-			return nil, errors.New("Unknown algorithm")
-		}
-	} else {
-		// Perform all transformations listed in the 'SignedInfo'
-		// Basically, this means removing the 'SignedInfo'
-		transformed, canonicalizer, err = ctx.transform(el, sig, ref)
+
+		digestAlgorithm := ref.DigestAlgo.Algorithm
+
+		// Digest the transformed XML and compare it to the 'DigestValue' from the 'SignedInfo'
+		digest, err := ctx.digest(transformed, digestAlgorithm, canonicalizer)
 		if err != nil {
 			return nil, err
 		}
-	}
 
-	digestAlgorithm := ref.DigestAlgo.Algorithm
+		decodedDigestValue, err := base64.StdEncoding.DecodeString(ref.DigestValue)
+		if err != nil {
+			return nil, err
+		}
 
-	// Digest the transformed XML and compare it to the 'DigestValue' from the 'SignedInfo'
-	digest, err := ctx.digest(transformed, digestAlgorithm, canonicalizer)
-	if err != nil {
-		return nil, err
-	}
+		if !bytes.Equal(digest, decodedDigestValue) {
+			xml, _ := canonicalizer.Canonicalize(transformed)
+			return nil, errors.New(
+				"Signature could not be verified for " +
+					ref.URI +
+					". Digest expected " +
+					base64.StdEncoding.EncodeToString(decodedDigestValue) +
+					". Digest found " +
+					base64.StdEncoding.EncodeToString(digest) +
+					". Transformed: " +
+					string(xml),
+			)
+		}
 
-	decodedDigestValue, err := base64.StdEncoding.DecodeString(ref.DigestValue)
-	if err != nil {
-		return nil, err
-	}
+		// Decode the 'SignatureValue' so we can compare against it
+		decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
+		if err != nil {
+			return nil, errors.New("Could not decode signature")
+		}
 
-	if !bytes.Equal(digest, decodedDigestValue) {
-		return nil, errors.New("Signature could not be verified")
-	}
-
-	// Decode the 'SignatureValue' so we can compare against it
-	decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
-	if err != nil {
-		return nil, errors.New("Could not decode signature")
-	}
-
-	// Actually verify the 'SignedInfo' was signed by a trusted source
-	signatureMethod := sig.SignedInfo.SignatureMethod.Algorithm
-	err = ctx.verifySignedInfo(sig, canonicalizer, signatureMethod, cert, decodedSignature)
-	if err != nil {
-		return nil, err
+		// Actually verify the 'SignedInfo' was signed by a trusted source
+		signatureMethod := sig.SignedInfo.SignatureMethod.Algorithm
+		err = ctx.verifySignedInfo(sig, canonicalizer, signatureMethod, cert, decodedSignature)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return transformed, nil
@@ -428,7 +438,7 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 			// Traverse references in the signature to determine whether is has at least
 			// one reference to the Object element. If so, conclude the search
 			for _, ref := range _sig.SignedInfo.References {
-				if ref.URI == "" || ref.URI[1:] == objectID {
+				if ref.URI == "" || ref.URI[1:] == objectID || ref.URI[0] == '#' {
 					sig = _sig
 					return etreeutils.ErrTraversalHalted
 				}
@@ -439,7 +449,7 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 				// Traverse references in the signature to determine whether it has at least
 				// one reference to the top level element. If so, conclude the search.
 				for _, ref := range _sig.SignedInfo.References {
-					if ref.URI == "" || ref.URI[1:] == idAttr.Value {
+					if ref.URI == "" || ref.URI[1:] == idAttr.Value || ref.URI[0] == '#' {
 						sig = _sig
 						return etreeutils.ErrTraversalHalted
 					}

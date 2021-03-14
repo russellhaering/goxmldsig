@@ -49,7 +49,7 @@ func main() {
 		panic(err)
 	}
 	if _, err := validCtx.Validate(signedElement); err != nil {
-		log.Fatal("Failed Validation ", err)
+		log.Fatal("Failed Validation: ", err)
 		panic(err)
 	}
 

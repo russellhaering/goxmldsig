@@ -84,7 +84,7 @@ func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, envelo
 		Tag:   SignedInfoTag,
 		Space: ctx.Prefix,
 		Attr: []etree.Attr{
-			{Key: "Id", Value: "S1-SignedInfo"},
+			{Key: ctx.IdAttribute, Value: "S1-SignedInfo"},
 		},
 	}
 
@@ -98,7 +98,7 @@ func (ctx *SigningContext) constructSignedInfo(digest []byte, uri string, envelo
 
 	// /SignedInfo/Reference
 	reference := ctx.createNamespacedElement(signedInfo, ReferenceTag)
-	reference.CreateAttr("Id", "S1-ref-1")
+	reference.CreateAttr(ctx.IdAttribute, "S1-ref-1")
 	reference.CreateAttr(URIAttr, uri)
 
 	// /SignedInfo/Reference/Transforms
@@ -181,7 +181,7 @@ func (ctx *SigningContext) baseSig(signedInfo *etree.Element) *etree.Element {
 		Space: ctx.Prefix,
 		Attr: []etree.Attr{
 			{Space: "xmlns", Key: ctx.Prefix, Value: Namespace},
-			{Key: "Id", Value: "S1"},
+			{Key: ctx.IdAttribute, Value: "S1"},
 		},
 		Child: []etree.Token{
 			signedInfo,
@@ -348,7 +348,7 @@ func (ctx *SigningContext) xadesSignedSignatureProperties(x509Cert *x509.Certifi
 		Space: "xades",
 		Tag:   "SignedSignatureProperties",
 		Attr: []etree.Attr{
-			{Key: "Id", Value: "S1-SignedSignatureProperties"},
+			{Key: ctx.IdAttribute, Value: "S1-SignedSignatureProperties"},
 		},
 		Child: []etree.Token{
 			&etree.Element{
@@ -416,21 +416,21 @@ func (ctx *SigningContext) xadesUnsignedSignatureProperties(signature, ocspRespo
 		Space: "xades",
 		Tag:   "UnsignedProperties",
 		Attr: []etree.Attr{
-			{Key: "Id", Value: "S1-UnsignedProperties"},
+			{Key: ctx.IdAttribute, Value: "S1-UnsignedProperties"},
 		},
 		Child: []etree.Token{
 			&etree.Element{
 				Space: "xades",
 				Tag:   "UnsignedSignatureProperties",
 				Attr: []etree.Attr{
-					{Key: "Id", Value: "S1-UnsignedSignatureProperties"},
+					{Key: ctx.IdAttribute, Value: "S1-UnsignedSignatureProperties"},
 				},
 				Child: []etree.Token{
 					&etree.Element{
 						Space: "xades",
 						Tag:   "SignatureTimeStamp",
 						Attr: []etree.Attr{
-							{Key: "Id", Value: "S1-ts-0"},
+							{Key: ctx.IdAttribute, Value: "S1-ts-0"},
 						},
 						Child: []etree.Token{
 							&etree.Element{
@@ -538,13 +538,17 @@ func (ctx *SigningContext) SignXAdES(uri string, mimetype string, input []byte) 
 		Space: "xades",
 		Tag:   "SignedProperties",
 		Attr: []etree.Attr{
-			{Key: "Id", Value: "S1-SignedProperties"},
+			{Key: ctx.IdAttribute, Value: "S1-SignedProperties"},
 		},
 		Child: []etree.Token{
 			sigProp, sigObjProp,
 		},
 	}
-	sigDigest, err := ctx.digest(sigProps)
+	canon, err := MakeC14N10CommentCanonicalizer().Canonicalize(sigProps)
+	if err != nil {
+		return nil, err
+	}
+	sigDigest, err := ctx.hash(canon)
 	if err != nil {
 		return nil, err
 	}
@@ -553,7 +557,7 @@ func (ctx *SigningContext) SignXAdES(uri string, mimetype string, input []byte) 
 		Space: "ds",
 		Tag:   "Reference",
 		Attr: []etree.Attr{
-			{Key: "Id", Value: "S1-ref-SignedProperties"},
+			{Key: ctx.IdAttribute, Value: "S1-ref-SignedProperties"},
 			{Key: "Type", Value: "http://uri.etsi.org/01903#SignedProperties"},
 			{Key: "URI", Value: "#S1-SignedProperties"},
 		},
@@ -584,7 +588,7 @@ func (ctx *SigningContext) SignXAdES(uri string, mimetype string, input []byte) 
 				Tag:   "QualifyingProperties",
 				Attr: []etree.Attr{
 					{Space: "xmlns", Key: "xades", Value: "http://uri.etsi.org/01903/v1.3.2#"},
-					{Key: "Id", Value: "S1-QualifyingProperties"},
+					{Key: ctx.IdAttribute, Value: "S1-QualifyingProperties"},
 					{Key: "Target", Value: "#S1"},
 				},
 				Child: []etree.Token{
