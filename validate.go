@@ -268,6 +268,9 @@ func (ctx *ValidationContext) validateSignature(el *etree.Element, sig *types.Si
 	if !bytes.Equal(digest, decodedDigestValue) {
 		return nil, errors.New("Signature could not be verified")
 	}
+	if sig.SignatureValue == nil {
+		return nil, errors.New("Signature could not be verified")
+	}
 
 	// Decode the 'SignatureValue' so we can compare against it
 	decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
