@@ -108,7 +108,7 @@ func (c *c14N10CommentCanonicalizer) Algorithm() AlgorithmID {
 
 type CanonicalXML10ExclusiveComment struct{}
 
-// MakeCanonicalXML10ExclusiveComment constructs an canonicalizer.
+// MakeCanonicalXML10ExclusiveComment constructs a canonicalizer.
 func MakeCanonicalXML10ExclusiveComment() Canonicalizer {
 	return &CanonicalXML10ExclusiveComment{}
 }
