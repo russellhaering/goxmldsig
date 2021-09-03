@@ -106,6 +106,23 @@ func (c *c14N10CommentCanonicalizer) Algorithm() AlgorithmID {
 	return CanonicalXML10CommentAlgorithmId
 }
 
+type CanonicalXML10ExclusiveComment struct{}
+
+// MakeCanonicalXML10ExclusiveComment constructs an inclusive canonicalizer.
+func MakeCanonicalXML10ExclusiveComment() Canonicalizer {
+	return &CanonicalXML10ExclusiveComment{}
+}
+
+// Canonicalize transforms the input Element into a serialized XML document in canonical form.
+func (c *CanonicalXML10ExclusiveComment) Canonicalize(el *etree.Element) ([]byte, error) {
+	scope := make(map[string]struct{})
+	return canonicalSerialize(canonicalPrep(el, scope, true))
+}
+
+func (c *CanonicalXML10ExclusiveComment) Algorithm() AlgorithmID {
+	return CanonicalXML10ExclusiveCommentAlgorithmId
+}
+
 func composeAttr(space, key string) string {
 	if space != "" {
 		return space + ":" + key
