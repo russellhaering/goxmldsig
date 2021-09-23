@@ -21,7 +21,7 @@ var (
 	// ErrMissingSignature indicates that no enveloped signature was found referencing
 	// the top level element passed for signature verification.
 	ErrMissingSignature = errors.New("Missing signature referencing the top-level element")
-	ErrInvalidSignature = errors.New( "Invalid Signature")
+	ErrInvalidSignature = errors.New("Invalid Signature")
 )
 
 type ValidationContext struct {
@@ -153,7 +153,8 @@ func (ctx *ValidationContext) transform(
 	}
 
 	if canonicalizer == nil {
-		canonicalizer = MakeNullCanonicalizer()
+		// Fall back to the Apple Canonicalizer because they're doing weird SAML stuff
+		canonicalizer = MakeC14N10RecCanonicalizer()
 	}
 
 	return el, canonicalizer, nil
