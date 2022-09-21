@@ -80,25 +80,24 @@ func mapPathToElement(tree, el *etree.Element) []int {
 }
 
 func removeElementAtPath(el *etree.Element, path []int) bool {
+	
 	if len(path) == 0 {
 		return false
 	}
 
-	if len(el.Child) <= path[0] {
-		return false
-	}
+	if path[0] < len(el.Child) {
 
-	childElement, ok := el.Child[path[0]].(*etree.Element)
-	if !ok {
-		return false
+		if len(path) == 1 {
+			el.RemoveChildAt(path[0])
+			return true
+		}
+		
+		childElement, ok := el.Child[path[0]].(*etree.Element)
+		if ok {
+			return removeElementAtPath(childElement, path[1:])
+		}
 	}
-
-	if len(path) == 1 {
-		el.RemoveChild(childElement)
-		return true
-	}
-
-	return removeElementAtPath(childElement, path[1:])
+	return false
 }
 
 // Transform returns a new element equivalent to the passed root el, but with
