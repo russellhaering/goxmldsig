@@ -126,3 +126,53 @@ func TestSignNonDefaultID(t *testing.T) {
 	refURI := ref.SelectAttrValue("URI", "")
 	require.Equal(t, refURI, "#"+id)
 }
+
+func TestSignManifest(t *testing.T) {
+	randomKeyStore := RandomKeyStoreForTest()
+	ctx := NewDefaultSigningContext(randomKeyStore)
+
+	test := []byte {0x45, 0xf1, 0xab, 0xd7, 0x8a, 0x6f, 0x92, 0xe6, 0xa4, 0xb6, 0x8e, 0xba, 0x8f, 0xe7, 0x91, 0x96, 0xe0, 0xb2, 0x16, 0xd6, 0x0b, 0x82, 0x1b, 0x00, 0x45, 0xfa, 0xb8, 0xad, 0xd4, 0xfa, 0xff, 0xf9}
+	digest := []byte {0x8b, 0xba, 0x7c, 0x7d, 0xbc, 0x28, 0xab, 0x55, 0xd0, 0xf5, 0x52, 0xd3, 0xa4, 0xf1, 0xdd, 0xa6, 0x0e, 0xbf, 0xfc, 0x59, 0x59, 0x2b, 0x5e, 0xfb, 0x22, 0x02, 0xf9, 0x45, 0xfd, 0xcb, 0xdc, 0x11}
+	
+	sig := ctx.CreateSignature("id1234")
+	err := ctx.AddManifestRef(sig, "FirstRef", crypto.SHA256, test)
+	require.NoError(t, err)
+
+	man := sig.FindElementPath(ctx.manifestPath(sig))
+	require.NotNil(t, man)
+
+	err = ctx.AddManifestRef(sig, "SecondRef", crypto.SHA256, test)
+	require.NoError(t, err)
+
+	id := man.SelectAttr(ctx.IdAttribute)
+	require.NotEmpty(t, id)
+
+	signed, err := ctx.Sign(sig)
+	require.NoError(t, err)
+
+	signedInfo := signed.FindElement("//" + SignedInfoTag)
+	require.NotEmpty(t, signedInfo)
+
+	referenceElement := signedInfo.FindElement("//" + ReferenceTag)
+	require.NotEmpty(t, referenceElement)
+
+	idAttr := referenceElement.SelectAttr(URIAttr)
+	require.NotEmpty(t, idAttr)
+	require.Equal(t, "#"+id.Value, idAttr.Value)
+
+	typeAttr := referenceElement.SelectAttr(TypeAttr)
+	require.NotEmpty(t, typeAttr)
+	require.Equal(t, "http://www.w3.org/2000/09/xmldsig#Manifest", typeAttr.Value)
+
+	digestMethodElement := referenceElement.FindElement("//" + DigestMethodTag)
+	require.NotEmpty(t, digestMethodElement)
+
+	digestMethodAttr := digestMethodElement.SelectAttr(AlgorithmAttr)
+	require.NotEmpty(t, digestMethodElement)
+	require.Equal(t, "http://www.w3.org/2001/04/xmlenc#sha256", digestMethodAttr.Value)
+
+	digestValueElement := referenceElement.FindElement("//" + DigestValueTag)
+	require.NotEmpty(t, digestValueElement)
+	require.Equal(t, base64.StdEncoding.EncodeToString(digest), digestValueElement.Text())
+
+}

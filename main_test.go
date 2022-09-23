@@ -1,6 +1,7 @@
 package dsig
 
 import (
+	"crypto"
 	"crypto/x509"
 	"testing"
 
@@ -43,4 +44,40 @@ func TestDocumentedExample(t *testing.T) {
 	validated, err := vctx.Validate(signedElement)
 	require.NoError(t, err)
 	require.NotEmpty(t, validated)
+}
+
+func TestManifestExample(t *testing.T) {
+
+	// Generate a key and self-signed certificate for signing
+	randomKeyStore := RandomKeyStoreForTest()
+	ctx := NewDefaultSigningContext(randomKeyStore)
+
+	test := []byte{0x45, 0xf1, 0xab, 0xd7, 0x8a, 0x6f, 0x92, 0xe6, 0xa4, 0xb6, 0x8e, 0xba, 0x8f, 0xe7, 0x91, 0x96, 0xe0, 0xb2, 0x16, 0xd6, 0x0b, 0x82, 0x1b, 0x00, 0x45, 0xfa, 0xb8, 0xad, 0xd4, 0xfa, 0xff, 0xf9}
+
+	sig := ctx.CreateSignature("id1234")
+	err := ctx.AddManifestRef(sig, "package", crypto.SHA256, test)
+	require.NoError(t, err)
+
+	// Sign the signature
+	signed, err := ctx.Sign(sig)
+	require.NoError(t, err)
+
+	// Validate
+	_, certData, err := ctx.KeyStore.GetKeyPair()
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(certData)
+	require.NoError(t, err)
+
+	// Construct a signing context with one or more roots of trust.
+	vctx := NewDefaultValidationContext(&MemoryX509CertificateStore{
+		Roots: []*x509.Certificate{cert},
+	})
+
+	// It is important to only use the returned validated element.
+	// See: https://www.w3.org/TR/xmldsig-bestpractices/#check-what-is-signed
+	manifest, err := vctx.ValidateManifest(signed)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, manifest)
 }

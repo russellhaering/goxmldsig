@@ -30,9 +30,15 @@ type DigestMethod struct {
 type Reference struct {
 	XMLName     xml.Name     `xml:"http://www.w3.org/2000/09/xmldsig# Reference"`
 	URI         string       `xml:"URI,attr"`
+	Type        string       `xml:"Type,attr"`
 	DigestValue string       `xml:"DigestValue"`
 	DigestAlgo  DigestMethod `xml:"DigestMethod"`
 	Transforms  Transforms   `xml:"Transforms"`
+}
+
+type Manifest struct {
+	XMLName    xml.Name    `xml:"http://www.w3.org/2000/09/xmldsig# Manifest"`
+	References []Reference `xml:"Reference"`
 }
 
 type CanonicalizationMethod struct {
@@ -78,6 +84,7 @@ type Signature struct {
 	SignatureValue *SignatureValue `xml:"SignatureValue"`
 	KeyInfo        *KeyInfo        `xml:"KeyInfo"`
 	el             *etree.Element
+	RootRef        *Reference
 }
 
 // SetUnderlyingElement will be called with a reference to the Element this Signature

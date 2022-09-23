@@ -23,13 +23,17 @@ const (
 	X509DataTag               = "X509Data"
 	X509CertificateTag        = "X509Certificate"
 	InclusiveNamespacesTag    = "InclusiveNamespaces"
+	ObjectTag                 = "Object"
+	ManifestTag               = "Manifest"
 )
 
 const (
 	AlgorithmAttr  = "Algorithm"
+	TypeAttr       = "Type"
 	URIAttr        = "URI"
 	DefaultIdAttr  = "ID"
 	PrefixListAttr = "PrefixList"
+	ManifestPrefix = "Package"
 )
 
 type AlgorithmID string
@@ -44,7 +48,11 @@ const (
 	RSASHA512SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512"
 )
 
-//Well-known signature algorithms
+const (
+	ManifestRefType = "http://www.w3.org/2000/09/xmldsig#Manifest"
+)
+
+// Well-known signature algorithms
 const (
 	// Supported canonicalization algorithms
 	CanonicalXML10ExclusiveAlgorithmId             AlgorithmID = "http://www.w3.org/2001/10/xml-exc-c14n#"
