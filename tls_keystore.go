@@ -8,8 +8,8 @@ import (
 
 //Well-known errors
 var (
-	ErrNonRSAKey           = fmt.Errorf("Private key was not RSA")
-	ErrMissingCertificates = fmt.Errorf("No public certificates provided")
+	ErrNonRSAKey           = fmt.Errorf("private key was not RSA")
+	ErrMissingCertificates = fmt.Errorf("no public certificates provided")
 )
 
 //TLSCertKeyStore wraps the stdlib tls.Certificate to return its contained key

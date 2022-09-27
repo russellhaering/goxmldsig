@@ -2,9 +2,7 @@ package etreeutils
 
 import (
 	"errors"
-
 	"fmt"
-
 	"sort"
 
 	"github.com/beevik/etree"
@@ -302,7 +300,7 @@ func NSFindOne(el *etree.Element, namespace, tag string) (*etree.Element, error)
 func NSFindOneCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*etree.Element, error) {
 	var found *etree.Element
 
-	err := NSFindIterateCtx(ctx, el, namespace, tag, func(ctx NSContext, el *etree.Element) error {
+	err := NSFindIterateCtx(ctx, el, namespace, tag, func(_ NSContext, el *etree.Element) error {
 		found = el
 		return ErrTraversalHalted
 	})
@@ -376,7 +374,7 @@ func NSFindOneChild(el *etree.Element, namespace, tag string) (*etree.Element, e
 func NSFindOneChildCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*etree.Element, error) {
 	var found *etree.Element
 
-	err := NSFindChildrenIterateCtx(ctx, el, namespace, tag, func(ctx NSContext, el *etree.Element) error {
+	err := NSFindChildrenIterateCtx(ctx, el, namespace, tag, func(_ NSContext, el *etree.Element) error {
 		found = el
 		return ErrTraversalHalted
 	})

@@ -35,7 +35,7 @@ func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
 func (ctx *SigningContext) SetSignatureMethod(algorithmID string) error {
 	hash, ok := signatureMethodsByIdentifier[algorithmID]
 	if !ok {
-		return fmt.Errorf("Unknown SignatureMethod: %s", algorithmID)
+		return fmt.Errorf("unknown SignatureMethod: %s", algorithmID)
 	}
 
 	ctx.Hash = hash

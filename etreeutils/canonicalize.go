@@ -31,7 +31,7 @@ func transformExcC14n(ctx, declared NSContext, el *etree.Element, inclusiveNames
 	}
 
 	visiblyUtilizedPrefixes := map[string]struct{}{
-		el.Space: struct{}{},
+		el.Space: {},
 	}
 
 	filteredAttrs := []etree.Attr{}

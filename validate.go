@@ -20,8 +20,12 @@ var whiteSpace = regexp.MustCompile("\\s+")
 var (
 	// ErrMissingSignature indicates that no enveloped signature was found referencing
 	// the top level element passed for signature verification.
-	ErrMissingSignature = errors.New("Missing signature referencing the top-level element")
-	ErrInvalidSignature = errors.New("Invalid Signature")
+	ErrMissingSignature = errors.New("missing signature referencing the top-level element")
+
+	ErrUnsupportedMethod = errors.New("dsig: unsupported algorithm")
+	ErrInvalidSignature  = errors.New("dsig: invalid signature")
+	ErrBadCertificate    = errors.New("dsig: bad certificate")
+	ErrInvalidDigest     = errors.New("dsig: digest was broken")
 )
 
 type ValidationContext struct {
@@ -80,7 +84,7 @@ func mapPathToElement(tree, el *etree.Element) []int {
 }
 
 func removeElementAtPath(el *etree.Element, path []int) bool {
-	
+
 	if len(path) == 0 {
 		return false
 	}
@@ -91,7 +95,7 @@ func removeElementAtPath(el *etree.Element, path []int) bool {
 			el.RemoveChildAt(path[0])
 			return true
 		}
-		
+
 		childElement, ok := el.Child[path[0]].(*etree.Element)
 		if ok {
 			return removeElementAtPath(childElement, path[1:])
@@ -126,7 +130,7 @@ func (ctx *ValidationContext) transform(
 		switch AlgorithmID(algo) {
 		case EnvelopedSignatureAltorithmId:
 			if !removeElementAtPath(el, signaturePath) {
-				return nil, nil, errors.New("Error applying canonicalization transform: Signature not found")
+				return nil, nil, fmt.Errorf("%w: error applying canonicalization transform: Signature not found", ErrInvalidSignature)
 			}
 
 		case CanonicalXML10ExclusiveAlgorithmId:
@@ -158,7 +162,7 @@ func (ctx *ValidationContext) transform(
 			canonicalizer = MakeC14N10WithCommentsCanonicalizer()
 
 		default:
-			return nil, nil, errors.New("Unknown Transform Algorithm: " + algo)
+			return nil, nil, fmt.Errorf("%w: transform: %s", ErrUnsupportedMethod, algo)
 		}
 	}
 
@@ -177,13 +181,13 @@ func (ctx *ValidationContext) digest(el *etree.Element, digestAlgorithmId string
 
 	digestAlgorithm, ok := digestAlgorithmsByIdentifier[digestAlgorithmId]
 	if !ok {
-		return nil, errors.New("Unknown digest algorithm: " + digestAlgorithmId)
+		return nil, fmt.Errorf("%w: digest: %s", ErrUnsupportedMethod, digestAlgorithmId)
 	}
 
 	hash := digestAlgorithm.New()
 	_, err = hash.Write(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrUnsupportedMethod, err)
 	}
 
 	return hash.Sum(nil), nil
@@ -203,7 +207,7 @@ func (ctx *ValidationContext) verifySignedInfo(sig *types.Signature, canonicaliz
 	}
 
 	if signedInfo == nil {
-		return errors.New("Missing SignedInfo")
+		return fmt.Errorf("%w: missing SignedInfo", ErrInvalidSignature)
 	}
 
 	// Canonicalize the xml
@@ -214,26 +218,26 @@ func (ctx *ValidationContext) verifySignedInfo(sig *types.Signature, canonicaliz
 
 	signatureAlgorithm, ok := signatureMethodsByIdentifier[signatureMethodId]
 	if !ok {
-		return errors.New("Unknown signature method: " + signatureMethodId)
+		return fmt.Errorf("%w: signature method: %s", ErrUnsupportedMethod, signatureMethodId)
 	}
 
 	hash := signatureAlgorithm.New()
 	_, err = hash.Write(canonical)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrUnsupportedMethod, err)
 	}
 
 	hashed := hash.Sum(nil)
 
 	pubKey, ok := cert.PublicKey.(*rsa.PublicKey)
 	if !ok {
-		return errors.New("Invalid public key")
+		return fmt.Errorf("%w: invalid public key", ErrBadCertificate)
 	}
 
 	// Verify that the private key matching the public key from the cert was what was used to sign the 'SignedInfo' and produce the 'SignatureValue'
 	err = rsa.VerifyPKCS1v15(pubKey, signatureAlgorithm, hashed[:], decodedSignature)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w [%v]", ErrInvalidDigest, err)
 	}
 
 	return nil
@@ -272,20 +276,21 @@ func (ctx *ValidationContext) validateSignature(el *etree.Element, sig *types.Si
 
 	decodedDigestValue, err := base64.StdEncoding.DecodeString(ref.DigestValue)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not decode reference: %w", ErrInvalidDigest)
 	}
 
 	if !bytes.Equal(digest, decodedDigestValue) {
-		return nil, errors.New("Signature could not be verified")
+		return nil, fmt.Errorf("reference could not be verified: %w", ErrInvalidDigest)
 	}
+
 	if sig.SignatureValue == nil {
-		return nil, errors.New("Signature could not be verified")
+		return nil, fmt.Errorf("%w: missing SignatureValue", ErrInvalidSignature)
 	}
 
 	// Decode the 'SignatureValue' so we can compare against it
 	decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
 	if err != nil {
-		return nil, errors.New("Could not decode signature")
+		return nil, fmt.Errorf("could not decode signature: %w", ErrInvalidDigest)
 	}
 
 	// Actually verify the 'SignedInfo' was signed by a trusted source
@@ -356,7 +361,7 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 				}
 
 				if c14NMethod == nil {
-					return errors.New("missing CanonicalizationMethod on Signature")
+					return errors.New("missing CanonicalizationMethod")
 				}
 
 				c14NAlgorithm := c14NMethod.SelectAttrValue(AlgorithmAttr, "")
@@ -383,7 +388,7 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 					canonicalSignedInfo = canonicalPrep(detachedSignedInfo, map[string]struct{}{}, true, true)
 
 				default:
-					return fmt.Errorf("invalid CanonicalizationMethod on Signature: %s", c14NAlgorithm)
+					return fmt.Errorf("%w: canonicalization: %s", ErrUnsupportedMethod, c14NAlgorithm)
 				}
 
 				signatureEl.RemoveChild(signedInfo)
@@ -398,7 +403,7 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 		}
 
 		if !found {
-			return errors.New("Missing SignedInfo")
+			return errors.New("missing SignedInfo")
 		}
 
 		// Unmarshal the signature into a structured Signature type
@@ -421,7 +426,10 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 	})
 
 	if err != nil {
-		return nil, err
+		if errors.Is(err, ErrInvalidSignature) || errors.Is(err, ErrUnsupportedMethod) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %v", ErrInvalidSignature, err)
 	}
 
 	if sig == nil {
@@ -444,35 +452,35 @@ func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Cer
 	if sig.KeyInfo != nil {
 		// If the Signature includes KeyInfo, extract the certificate from there
 		if len(sig.KeyInfo.X509Data.X509Certificates) == 0 || sig.KeyInfo.X509Data.X509Certificates[0].Data == "" {
-			return nil, errors.New("missing X509Certificate within KeyInfo")
+			return nil, fmt.Errorf("%w: missing X509Certificate within KeyInfo", ErrInvalidSignature)
 		}
 
 		certData, err := base64.StdEncoding.DecodeString(
 			whiteSpace.ReplaceAllString(sig.KeyInfo.X509Data.X509Certificates[0].Data, ""))
 		if err != nil {
-			return nil, errors.New("Failed to parse certificate")
+			return nil, fmt.Errorf("%w: failed to decode certificate: %v", ErrInvalidSignature, err)
 		}
 
 		cert, err = x509.ParseCertificate(certData)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: failed to parse certificate: %v", ErrInvalidSignature, err)
 		}
 	} else {
 		// If the Signature doesn't have KeyInfo, Use the root certificate if there is only one
 		if len(roots) == 1 {
 			cert = roots[0]
 		} else {
-			return nil, errors.New("Missing x509 Element")
+			return nil, fmt.Errorf("%w: missing x509 Element", ErrInvalidSignature)
 		}
 	}
 
 	// Verify that the certificate is one we trust
 	if !contains(roots, cert) {
-		return nil, errors.New("Could not verify certificate against trusted certs")
+		return nil, fmt.Errorf("%w: could not verify against trusted certs", ErrBadCertificate)
 	}
 
 	if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
-		return nil, errors.New("Cert is not valid at this time")
+		return nil, fmt.Errorf("%w: cert is not valid at this time", ErrBadCertificate)
 	}
 
 	return cert, nil
