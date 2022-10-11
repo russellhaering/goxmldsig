@@ -286,24 +286,6 @@ func TestValidateWithModifiedAndSignatureEdited(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestMapPathAndRemove(t *testing.T) {
-	doc := etree.NewDocument()
-	err := doc.ReadFromString(`<X><Y/><Y><RemoveMe xmlns="x"/></Y></X>`)
-	require.NoError(t, err)
-
-	el, err := etreeutils.NSFindOne(doc.Root(), "x", "RemoveMe")
-	require.NoError(t, err)
-	require.NotNil(t, el)
-
-	path := mapPathToElement(doc.Root(), el)
-	removed := removeElementAtPath(doc.Root(), path)
-	require.True(t, removed)
-
-	el, err = etreeutils.NSFindOne(doc.Root(), "x", "RemoveMe")
-	require.NoError(t, err)
-	require.Nil(t, el)
-}
-
 const (
 	validExample = `<?xml version="1.0" encoding="UTF-8"?><saml2p:Response Destination="https://dev.sudo.wtf:8443/v1/_saml_callback" ID="id149481635007085371203272055" InResponseTo="_ffea96b1-44a2-4a86-9683-45807984ab5b" IssueInstant="2020-09-01T17:51:12.176Z" Version="2.0" xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:xs="http://www.w3.org/2001/XMLSchema"><saml2:Issuer Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity" xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion">http://www.okta.com/exkrfkzzb7NyB3UeP0h7</saml2:Issuer><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#id149481635007085371203272055"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"><ec:InclusiveNamespaces PrefixList="xs" xmlns:ec="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transform></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>LwRDkrPmsTcUa++BIS5VJIANUlZN7zzdtjLfxfLAWds=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>UyjNRj9ZFbhApPhWEuVG26yACVqd25uyRKalSpp6XCdjrqKjI8Fmx7Q/IFkk5M755cxyFCQGttxThR6IPBk4Kp5OG2qGKXNHt7OQ8mumSLqWZpBJbmzNIKyG3nWlFoLVCoWPtBTd2gZM0aHOQp1JKa1birFBp2NofkEXbLeghZQ2YfCc4m8qgpZW5k/Itc0P/TVIkvPInjdSMyjm/ql4FUDO8cMkExJNR/i+GElW8cfnniWGcDPSiOqfIjLEDvZouXC7F1v5Wa0SmIxg7NJUTB+g6yrDN15VDq3KbHHTMlZXOZTXON2mBZOj5cwyyd4uX3aGSmYQiy/CGqBdqxrW2A==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIDnjCCAoagAwIBAgIGAXHxS90vMA0GCSqGSIb3DQEBCwUAMIGPMQswCQYDVQQGEwJVUzETMBEG
 A1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwET2t0YTEU

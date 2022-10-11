@@ -79,46 +79,6 @@ func childPath(space, tag string) string {
 	}
 }
 
-func mapPathToElement(tree, el *etree.Element) []int {
-	for i, child := range tree.Child {
-		if child == el {
-			return []int{i}
-		}
-	}
-
-	for i, child := range tree.Child {
-		if childElement, ok := child.(*etree.Element); ok {
-			childPath := mapPathToElement(childElement, el)
-			if childPath != nil {
-				return append([]int{i}, childPath...)
-			}
-		}
-	}
-
-	return nil
-}
-
-func removeElementAtPath(el *etree.Element, path []int) bool {
-
-	if len(path) == 0 {
-		return false
-	}
-
-	if path[0] < len(el.Child) {
-
-		if len(path) == 1 {
-			el.RemoveChildAt(path[0])
-			return true
-		}
-
-		childElement, ok := el.Child[path[0]].(*etree.Element)
-		if ok {
-			return removeElementAtPath(childElement, path[1:])
-		}
-	}
-	return false
-}
-
 // Transform returns a new element equivalent to the passed root el, but with
 // the set of transformations described by the ref applied.
 //
@@ -133,11 +93,6 @@ func (ctx *ValidationContext) transform(
 	}
 	transforms := ref.Transforms.Transforms
 
-	// map the path to the passed signature relative to the passed root, in
-	// order to enable removal of the signature by an enveloped signature
-	// transform
-	signaturePath := mapPathToElement(el, sig.UnderlyingElement())
-
 	var canonicalizer Canonicalizer
 
 	for _, transform := range transforms {
@@ -146,7 +101,7 @@ func (ctx *ValidationContext) transform(
 		switch AlgorithmID(algo) {
 		case EnvelopedSignatureAltorithmId:
 			el = el.Copy() // make a copy of the passed root
-			if !removeElementAtPath(el, signaturePath) {
+			if !sig.RemoveUnderlyingElement(el) {
 				return nil, nil, fmt.Errorf("%w: error applying canonicalization transform: Signature not found", ErrInvalidSignature)
 			}
 
@@ -407,7 +362,7 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 
 		// Unmarshal the signature into a structured Signature type
 		_sig := &types.Signature{}
-		err = etreeutils.NSUnmarshalElement(ctx, signatureEl, _sig)
+		err = etreeutils.NSUnmarshalElement(ctx, root, signatureEl, _sig)
 		if err != nil {
 			return err
 		}
@@ -591,12 +546,10 @@ func (ctx *ValidationContext) Validate(el *etree.Element) (*etree.Element, error
 // Validate verifies that the passed element contains a valid signatures
 // matching a currently-valid certificate in the context's CertificateStore.
 func (ctx *ValidationContext) ValidateManifest(el *etree.Element) (*types.Manifest, error) {
-	// Make a copy of the element to avoid mutating the one we were passed.
-	el = el.Copy()
 
 	for {
-
-		sig, err := ctx.findSignature(el)
+		// Make a copy of the element to avoid mutating the one we were passed.
+		sig, err := ctx.findSignature(el.Copy())
 		if err != nil {
 			return nil, err
 		}
