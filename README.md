@@ -110,7 +110,7 @@ func main() {
     }
 
     // Sign the signature
-    signed, err := ctx.Sign(sig)
+    signed, err := ctx.SignManifest(sig)
     if err != nil {
         panic(err)
     }

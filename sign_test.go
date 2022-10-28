@@ -147,7 +147,7 @@ func TestSignManifest(t *testing.T) {
 	id := man.SelectAttr(ctx.IdAttribute)
 	require.NotEmpty(t, id)
 
-	signed, err := ctx.Sign(sig)
+	signed, err := ctx.SignManifest(sig)
 	require.NoError(t, err)
 
 	signedInfo := signed.FindElement("//" + SignedInfoTag)

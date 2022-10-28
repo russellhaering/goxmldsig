@@ -278,7 +278,7 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 	return child
 }
 
-func (ctx *SigningContext) Sign(sig *etree.Element) (*etree.Element, error) {
+func (ctx *SigningContext) SignManifest(sig *etree.Element) (*etree.Element, error) {
 
 	// First get the default context
 	rootNSCtx := etreeutils.DefaultNSContext
@@ -290,8 +290,8 @@ func (ctx *SigningContext) Sign(sig *etree.Element) (*etree.Element, error) {
 	}
 
 	man := sig.FindElementPath(ctx.manifestPath(sig))
-	if err != nil {
-		return nil, err
+	if man == nil {
+		return nil, errors.New("missing manifest element")
 	}
 
 	manifest, err := etreeutils.NSDetatch(sigNSCtx, man)

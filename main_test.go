@@ -59,7 +59,7 @@ func TestManifestExample(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sign the signature
-	signed, err := ctx.Sign(sig)
+	signed, err := ctx.SignManifest(sig)
 	require.NoError(t, err)
 
 	// Validate
@@ -82,6 +82,19 @@ func TestManifestExample(t *testing.T) {
 	require.NotEmpty(t, manifest)
 }
 
+func TestMissingManifest(t *testing.T) {
+
+	// Generate a key and self-signed certificate for signing
+	randomKeyStore := RandomKeyStoreForTest()
+	ctx := NewDefaultSigningContext(randomKeyStore)
+
+	sig := ctx.CreateSignature("id1234")
+	
+	// Sign the signature
+	_, err := ctx.SignManifest(sig)
+	require.Error(t, err)
+}
+
 func TestRecursiveSigning(t *testing.T) {
 
 	// Generate a key and self-signed certificate for signing
@@ -95,7 +108,7 @@ func TestRecursiveSigning(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sign the signature
-	signed, err := ctx.Sign(sig)
+	signed, err := ctx.SignManifest(sig)
 	require.NoError(t, err)
 
 	list := &etree.Element{Tag: "Signatures"}
