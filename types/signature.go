@@ -30,9 +30,15 @@ type DigestMethod struct {
 type Reference struct {
 	XMLName     xml.Name     `xml:"http://www.w3.org/2000/09/xmldsig# Reference"`
 	URI         string       `xml:"URI,attr"`
+	Type        string       `xml:"Type,attr"`
 	DigestValue string       `xml:"DigestValue"`
 	DigestAlgo  DigestMethod `xml:"DigestMethod"`
 	Transforms  Transforms   `xml:"Transforms"`
+}
+
+type Manifest struct {
+	XMLName    xml.Name    `xml:"http://www.w3.org/2000/09/xmldsig# Manifest"`
+	References []Reference `xml:"Reference"`
 }
 
 type CanonicalizationMethod struct {
@@ -78,16 +84,65 @@ type Signature struct {
 	SignatureValue *SignatureValue `xml:"SignatureValue"`
 	KeyInfo        *KeyInfo        `xml:"KeyInfo"`
 	el             *etree.Element
+	path           []int
+	RootRef        *Reference
 }
 
 // SetUnderlyingElement will be called with a reference to the Element this Signature
 // was unmarshaled from.
-func (s *Signature) SetUnderlyingElement(el *etree.Element) {
+func (s *Signature) SetUnderlyingElement(root, el *etree.Element) {
 	s.el = el
+	// map the path to the passed signature relative to the passed root, in order
+	// to enable removal of the signature by an enveloped signature transform
+	s.path = mapPathToElement(root, el)
 }
 
 // UnderlyingElement returns a reference to the Element this signature was unmarshaled
 // from, where applicable.
 func (s *Signature) UnderlyingElement() *etree.Element {
 	return s.el
+}
+
+func (s *Signature) RemoveUnderlyingElement(el *etree.Element) bool {
+	return removeElementAtPath(el, s.path)
+}
+
+func mapPathToElement(tree, el *etree.Element) []int {
+	for i, child := range tree.Child {
+		if child == el {
+			return []int{i}
+		}
+	}
+
+	for i, child := range tree.Child {
+		if childElement, ok := child.(*etree.Element); ok {
+			childPath := mapPathToElement(childElement, el)
+			if childPath != nil {
+				return append([]int{i}, childPath...)
+			}
+		}
+	}
+
+	return nil
+}
+
+func removeElementAtPath(el *etree.Element, path []int) bool {
+
+	if len(path) == 0 {
+		return false
+	}
+
+	if path[0] < len(el.Child) {
+
+		if len(path) == 1 {
+			el.RemoveChildAt(path[0])
+			return true
+		}
+
+		childElement, ok := el.Child[path[0]].(*etree.Element)
+		if ok {
+			return removeElementAtPath(childElement, path[1:])
+		}
+	}
+	return false
 }

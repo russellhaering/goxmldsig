@@ -93,6 +93,74 @@ func (ctx *SigningContext) SetSignatureMethod(algorithmID string) error {
 	return nil
 }
 
+func (ctx *SigningContext) CreateSignature(id string) *etree.Element {
+
+	sig := &etree.Element{
+		Tag:   SignatureTag,
+		Space: ctx.Prefix,
+	}
+
+	xmlns := "xmlns"
+	if ctx.Prefix != "" {
+		xmlns += ":" + ctx.Prefix
+	}
+
+	sig.CreateAttr(xmlns, Namespace)
+
+	if ctx.IdAttribute != "" && id != "" {
+		sig.CreateAttr(ctx.IdAttribute, id)
+	}
+	return sig
+}
+
+func (ctx *SigningContext) AddManifestRef(sig *etree.Element, name string, hash_id crypto.Hash, digest []byte) error {
+
+	digestAlgorithmIdentifier, ok := digestAlgorithmIdentifiers[hash_id]
+	if !ok {
+		return ErrUnsupportedMethod
+	}
+
+	manifest := ctx.constructManifest(sig)
+	reference := ctx.createNamespacedElement(manifest, ReferenceTag)
+	if name != "" {
+		reference.CreateAttr(URIAttr, name)
+	}
+	digestMethod := ctx.createNamespacedElement(reference, DigestMethodTag)
+	digestMethod.CreateAttr(AlgorithmAttr, digestAlgorithmIdentifier)
+
+	digestValue := ctx.createNamespacedElement(reference, DigestValueTag)
+	digestValue.SetText(base64.StdEncoding.EncodeToString(digest))
+
+	return nil
+}
+
+func (ctx *SigningContext) constructManifest(sig *etree.Element) *etree.Element {
+
+	man := sig.FindElementPath(ctx.manifestPath(sig))
+
+	if man == nil {
+		object := ctx.createNamespacedElement(sig, ObjectTag)
+		man = ctx.createNamespacedElement(object, ManifestTag)
+		if ctx.IdAttribute != "" {
+			man.CreateAttr(ctx.IdAttribute, ManifestPrefix+sig.SelectAttrValue(ctx.IdAttribute, ""))
+		}
+	}
+	return man
+}
+
+func (ctx *SigningContext) manifestPath(sig *etree.Element) etree.Path {
+
+	if ctx.IdAttribute != "" {
+		val := ManifestPrefix + sig.SelectAttrValue(ctx.IdAttribute, "")
+		pstr := fmt.Sprintf("%s/%s[@%s='%s']", ObjectTag, ManifestTag, ctx.IdAttribute, val)
+		if path, err := etree.CompilePath(pstr); err == nil {
+			return path
+		}
+	}
+	path, _ := etree.CompilePath(ObjectTag + "/" + ManifestTag)
+	return path
+}
+
 func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 	canonical, err := ctx.Canonicalizer.Canonicalize(el)
 	if err != nil {
@@ -180,6 +248,11 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 	// /SignedInfo/Reference
 	reference := ctx.createNamespacedElement(signedInfo, ReferenceTag)
 
+	// additional signature syntax
+	if el.Tag == ManifestTag {
+		reference.CreateAttr(TypeAttr, ManifestRefType)
+	}
+
 	dataId := el.SelectAttrValue(ctx.IdAttribute, "")
 	if dataId == "" {
 		reference.CreateAttr(URIAttr, "")
@@ -208,22 +281,13 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 }
 
 func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool) (*etree.Element, error) {
+
 	signedInfo, err := ctx.constructSignedInfo(el, enveloped)
 	if err != nil {
 		return nil, err
 	}
 
-	sig := &etree.Element{
-		Tag:   SignatureTag,
-		Space: ctx.Prefix,
-	}
-
-	xmlns := "xmlns"
-	if ctx.Prefix != "" {
-		xmlns += ":" + ctx.Prefix
-	}
-
-	sig.CreateAttr(xmlns, Namespace)
+	sig := ctx.CreateSignature("")
 	sig.AddChild(signedInfo)
 
 	// When using xml-c14n11 (ie, non-exclusive canonicalization) the canonical form
@@ -248,6 +312,11 @@ func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool)
 	if err != nil {
 		return nil, err
 	}
+
+	return ctx.signing(sig, sigNSCtx, signedInfo)
+}
+
+func (ctx *SigningContext) signing(sig *etree.Element, sigNSCtx etreeutils.NSContext, signedInfo *etree.Element) (*etree.Element, error) {
 
 	// Finally detatch the SignedInfo in order to capture all of the namespace
 	// declarations in the scope we've constructed.
@@ -288,6 +357,37 @@ func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string
 	child := el.CreateElement(tag)
 	child.Space = ctx.Prefix
 	return child
+}
+
+func (ctx *SigningContext) SignManifest(sig *etree.Element) (*etree.Element, error) {
+
+	// First get the default context
+	rootNSCtx := etreeutils.DefaultNSContext
+
+	// Followed by declarations on the Signature (which we just added above)
+	sigNSCtx, err := rootNSCtx.SubContext(sig)
+	if err != nil {
+		return nil, err
+	}
+
+	man := sig.FindElementPath(ctx.manifestPath(sig))
+	if man == nil {
+		return nil, errors.New("missing manifest element")
+	}
+
+	manifest, err := etreeutils.NSDetatch(sigNSCtx, man)
+	if err != nil {
+		return nil, err
+	}
+
+	signedInfo, err := ctx.constructSignedInfo(manifest, false)
+	if err != nil {
+		return nil, err
+	}
+
+	sig.AddChild(signedInfo)
+
+	return ctx.signing(sig, sigNSCtx, signedInfo)
 }
 
 func (ctx *SigningContext) SignEnveloped(el *etree.Element) (*etree.Element, error) {

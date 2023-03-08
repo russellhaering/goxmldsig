@@ -26,13 +26,17 @@ const (
 	X509DataTag               = "X509Data"
 	X509CertificateTag        = "X509Certificate"
 	InclusiveNamespacesTag    = "InclusiveNamespaces"
+	ObjectTag                 = "Object"
+	ManifestTag               = "Manifest"
 )
 
 const (
 	AlgorithmAttr  = "Algorithm"
+	TypeAttr       = "Type"
 	URIAttr        = "URI"
 	DefaultIdAttr  = "ID"
 	PrefixListAttr = "PrefixList"
+	ManifestPrefix = "Package"
 )
 
 type AlgorithmID string
@@ -50,6 +54,10 @@ const (
 	ECDSASHA256SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"
 	ECDSASHA384SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384"
 	ECDSASHA512SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512"
+)
+
+const (
+	ManifestRefType = "http://www.w3.org/2000/09/xmldsig#Manifest"
 )
 
 // Well-known signature algorithms
