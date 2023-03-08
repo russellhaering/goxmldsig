@@ -3,7 +3,6 @@ package dsig
 import (
 	"bytes"
 	"crypto"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
@@ -200,26 +199,12 @@ func (ctx *ValidationContext) verifySignedInfo(sig *types.Signature, cert *x509.
 	}
 
 	signatureMethodId := sig.SignedInfo.SignatureMethod.Algorithm
-	signatureAlgorithm, ok := signatureMethodsByIdentifier[signatureMethodId]
+	algo, ok := x509SignatureAlgorithmByIdentifier[signatureMethodId]
 	if !ok {
 		return fmt.Errorf("%w: signature method: %s", ErrUnsupportedMethod, signatureMethodId)
 	}
 
-	hash := signatureAlgorithm.New()
-	_, err = hash.Write(canonical)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnsupportedMethod, err)
-	}
-
-	hashed := hash.Sum(nil)
-
-	pubKey, ok := cert.PublicKey.(*rsa.PublicKey)
-	if !ok {
-		return fmt.Errorf("%w: invalid public key", ErrBadCertificate)
-	}
-
-	// Verify that the private key matching the public key from the cert was what was used to sign the 'SignedInfo' and produce the 'SignatureValue'
-	err = rsa.VerifyPKCS1v15(pubKey, signatureAlgorithm, hashed[:], decodedSignature)
+	err = cert.CheckSignature(algo, canonical, decodedSignature)
 	if err != nil {
 		return fmt.Errorf("%w [%v]", ErrInvalidDigest, err)
 	}
