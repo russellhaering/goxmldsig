@@ -115,7 +115,7 @@ func (ctx *SigningContext) signDigest(digest []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		rawSignature, err := rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
+		rawSignature, err := key.Sign(rand.Reader, digest, ctx.Hash)
 		if err != nil {
 			return nil, err
 		}

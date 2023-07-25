@@ -1,6 +1,7 @@
 package dsig
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -9,7 +10,7 @@ import (
 )
 
 type X509KeyStore interface {
-	GetKeyPair() (privateKey *rsa.PrivateKey, cert []byte, err error)
+	GetKeyPair() (privateKey crypto.Signer, cert []byte, err error)
 }
 
 type X509ChainStore interface {
@@ -29,11 +30,11 @@ func (mX509cs *MemoryX509CertificateStore) Certificates() ([]*x509.Certificate, 
 }
 
 type MemoryX509KeyStore struct {
-	privateKey *rsa.PrivateKey
+	privateKey crypto.Signer
 	cert       []byte
 }
 
-func (ks *MemoryX509KeyStore) GetKeyPair() (*rsa.PrivateKey, []byte, error) {
+func (ks *MemoryX509KeyStore) GetKeyPair() (crypto.Signer, []byte, error) {
 	return ks.privateKey, ks.cert, nil
 }
 
