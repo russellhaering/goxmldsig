@@ -11,7 +11,7 @@ jobs:
       matrix:
         go: ['1.20', '1.19']
     steps:
-      - uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
