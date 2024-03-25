@@ -417,7 +417,7 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 	return sig, nil
 }
 
-func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Certificate, error) {
+func (ctx *ValidationContext) verifyCertificate(sig *types.Signature, verify bool) (*x509.Certificate, error) {
 	now := ctx.Clock.Now()
 
 	roots, err := ctx.CertificateStore.Certificates()
@@ -453,8 +453,24 @@ func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Cer
 	}
 
 	// Verify that the certificate is one we trust
-	if !contains(roots, cert) {
-		return nil, errors.New("Could not verify certificate against trusted certs")
+	if verify {
+		pool := x509.NewCertPool()
+		for _, c := range roots {
+			pool.AddCert(c)
+		}
+		opts := x509.VerifyOptions{
+			Roots:     pool,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
+		}
+
+		_, err := cert.Verify(opts)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if !contains(roots, cert) {
+			return nil, errors.New("Could not verify certificate against trusted certs")
+		}
 	}
 
 	if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
@@ -475,7 +491,25 @@ func (ctx *ValidationContext) Validate(el *etree.Element) (*etree.Element, error
 		return nil, err
 	}
 
-	cert, err := ctx.verifyCertificate(sig)
+	cert, err := ctx.verifyCertificate(sig, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctx.validateSignature(el, sig, cert)
+}
+
+// ValidateWithRootTrust does the same as Verify except it actually verifies the root CA is trusted as well
+func (ctx *ValidationContext) ValidateWithRootTrust(el *etree.Element) (*etree.Element, error) {
+	// Make a copy of the element to avoid mutating the one we were passed.
+	el = el.Copy()
+
+	sig, err := ctx.findSignature(el)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := ctx.verifyCertificate(sig, true)
 	if err != nil {
 		return nil, err
 	}
