@@ -425,7 +425,7 @@ func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Cer
 		return nil, err
 	}
 
-	var cert *x509.Certificate
+	var untrustedCert *x509.Certificate
 
 	if sig.KeyInfo != nil {
 		// If the Signature includes KeyInfo, extract the certificate from there
@@ -439,29 +439,40 @@ func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Cer
 			return nil, errors.New("Failed to parse certificate")
 		}
 
-		cert, err = x509.ParseCertificate(certData)
+		untrustedCert, err = x509.ParseCertificate(certData)
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		// If the Signature doesn't have KeyInfo, Use the root certificate if there is only one
 		if len(roots) == 1 {
-			cert = roots[0]
+			untrustedCert = roots[0]
 		} else {
 			return nil, errors.New("Missing x509 Element")
 		}
 	}
 
-	// Verify that the certificate is one we trust
-	if !contains(roots, cert) {
-		return nil, errors.New("Could not verify certificate against trusted certs")
+	rootIdx := -1
+	for i, root := range roots {
+		if root.Equal(untrustedCert) {
+			rootIdx = i
+		}
 	}
 
-	if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+	if rootIdx == -1 {
+		return nil, errors.New("Could not verify certificate against trusted certs")
+	}
+	var trustedCert *x509.Certificate
+
+	trustedCert = roots[rootIdx]
+
+	// Verify that the certificate is one we trust
+
+	if now.Before(trustedCert.NotBefore) || now.After(trustedCert.NotAfter) {
 		return nil, errors.New("Cert is not valid at this time")
 	}
 
-	return cert, nil
+	return trustedCert, nil
 }
 
 // Validate verifies that the passed element contains a valid enveloped signature
@@ -475,6 +486,7 @@ func (ctx *ValidationContext) Validate(el *etree.Element) (*etree.Element, error
 		return nil, err
 	}
 
+	// function to get the trusted certificate
 	cert, err := ctx.verifyCertificate(sig)
 	if err != nil {
 		return nil, err
