@@ -164,7 +164,8 @@ func (ctx *ValidationContext) transform(
 	}
 
 	if canonicalizer == nil {
-		canonicalizer = MakeNullCanonicalizer()
+		// Fall back to the Apple Canonicalizer because they're doing weird SAML stuff
+		canonicalizer = MakeC14N10RecCanonicalizer()
 	}
 
 	return el, canonicalizer, nil
