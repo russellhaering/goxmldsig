@@ -19,19 +19,33 @@ import (
 type SigningContext struct {
 	Hash crypto.Hash
 
-	// This field will be nil and unused if the SigningContext is created with
-	// NewSigningContext
-	KeyStore      X509KeyStore
+	// Fields for legacy support
+	KeyStore X509KeyStore
+
 	IdAttribute   string
 	Prefix        string
 	Canonicalizer Canonicalizer
 
-	// KeyStore is mutually exclusive with signer and certs
-	signer crypto.Signer
-	certs  [][]byte
+	// Signer is the preferred way to provide signing capabilities
+	Signer Signer
+
+	// Legacy fields for backward compatibility
+	legacySigner crypto.Signer
+	certs        [][]byte
 }
 
 func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
+	// Try to create a FileSigner from the key store
+	key, cert, err := ks.GetKeyPair()
+	if err == nil {
+		// Create a file signer
+		signer, err := NewFileSigner(key, cert, crypto.SHA256)
+		if err == nil {
+			return NewDefaultSigningContextWithSigner(signer)
+		}
+	}
+
+	// Fall back to legacy approach if the FileSigner can't be created
 	return &SigningContext{
 		Hash:          crypto.SHA256,
 		KeyStore:      ks,
@@ -41,11 +55,24 @@ func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
 	}
 }
 
-// NewSigningContext creates a new signing context with the given signer and certificate chain.
+// NewDefaultSigningContextWithSigner creates a new signing context with the given custom signer.
+// This is the preferred way to create a SigningContext.
+func NewDefaultSigningContextWithSigner(signer Signer) *SigningContext {
+	return &SigningContext{
+		Hash:          crypto.SHA256,
+		Signer:        signer,
+		IdAttribute:   DefaultIdAttr,
+		Prefix:        DefaultPrefix,
+		Canonicalizer: MakeC14N11Canonicalizer(),
+	}
+}
+
+// NewSigningContext creates a new signing context with the given crypto.Signer and certificate chain.
 // Note that e.g. rsa.PrivateKey implements the crypto.Signer interface.
 // The certificate chain is a slice of ASN.1 DER-encoded X.509 certificates.
 // A SigningContext created with this function should not use the KeyStore field.
 // It will return error if passed a nil crypto.Signer
+// This method is kept for backwards compatibility.
 func NewSigningContext(signer crypto.Signer, certs [][]byte) (*SigningContext, error) {
 	if signer == nil {
 		return nil, errors.New("signer cannot be nil for NewSigningContext")
@@ -56,17 +83,28 @@ func NewSigningContext(signer crypto.Signer, certs [][]byte) (*SigningContext, e
 		Prefix:        DefaultPrefix,
 		Canonicalizer: MakeC14N11Canonicalizer(),
 
-		signer: signer,
-		certs:  certs,
+		legacySigner: signer,
+		certs:        certs,
 	}
 	return ctx, nil
 }
 
 func (ctx *SigningContext) getPublicKeyAlgorithm() x509.PublicKeyAlgorithm {
-	if ctx.KeyStore != nil {
+	if ctx.Signer != nil {
+		// Determine algorithm from the Signer interface
+		alg := ctx.Signer.Algorithm()
+		if string(alg) == RSASHA1SignatureMethod ||
+			string(alg) == RSASHA256SignatureMethod ||
+			string(alg) == RSASHA384SignatureMethod ||
+			string(alg) == RSASHA512SignatureMethod {
+			return x509.RSA
+		} else {
+			return x509.ECDSA
+		}
+	} else if ctx.KeyStore != nil {
 		return x509.RSA
-	} else {
-		switch ctx.signer.Public().(type) {
+	} else if ctx.legacySigner != nil {
+		switch ctx.legacySigner.Public().(type) {
 		case *ecdsa.PublicKey:
 			return x509.ECDSA
 		case *rsa.PublicKey:
@@ -109,29 +147,40 @@ func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 }
 
 func (ctx *SigningContext) signDigest(digest []byte) ([]byte, error) {
+	// First, try using the Signer interface
+	if ctx.Signer != nil {
+		return ctx.Signer.Sign(rand.Reader, digest, ctx.Hash)
+	}
+
+	// Fall back to KeyStore if Signer is not available
 	if ctx.KeyStore != nil {
 		key, _, err := ctx.KeyStore.GetKeyPair()
 		if err != nil {
 			return nil, err
 		}
 
-		rawSignature, err := rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
-		if err != nil {
-			return nil, err
-		}
-
-		return rawSignature, nil
-	} else {
-		rawSignature, err := ctx.signer.Sign(rand.Reader, digest, ctx.Hash)
-		if err != nil {
-			return nil, err
-		}
-
-		return rawSignature, nil
+		return rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
 	}
+
+	// Finally, use legacy signer if available
+	if ctx.legacySigner != nil {
+		return ctx.legacySigner.Sign(rand.Reader, digest, ctx.Hash)
+	}
+
+	return nil, errors.New("no signer available")
 }
 
 func (ctx *SigningContext) getCerts() ([][]byte, error) {
+	// First, try using the Signer interface
+	if ctx.Signer != nil {
+		cert, err := ctx.Signer.GetCertificate()
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{cert}, nil
+	}
+
+	// Fall back to KeyStore if Signer is not available
 	if ctx.KeyStore != nil {
 		if cs, ok := ctx.KeyStore.(X509ChainStore); ok {
 			return cs.GetChain()
@@ -143,9 +192,14 @@ func (ctx *SigningContext) getCerts() ([][]byte, error) {
 		}
 
 		return [][]byte{cert}, nil
-	} else {
+	}
+
+	// Finally, use legacy certs if available
+	if ctx.certs != nil && len(ctx.certs) > 0 {
 		return ctx.certs, nil
 	}
+
+	return nil, errors.New("no certificates available")
 }
 
 func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool) (*etree.Element, error) {
@@ -303,8 +357,13 @@ func (ctx *SigningContext) SignEnveloped(el *etree.Element) (*etree.Element, err
 }
 
 func (ctx *SigningContext) GetSignatureMethodIdentifier() string {
-	algo := ctx.getPublicKeyAlgorithm()
+	// First, try using the Signer interface
+	if ctx.Signer != nil {
+		return string(ctx.Signer.Algorithm())
+	}
 
+	// Fall back to the legacy approach
+	algo := ctx.getPublicKeyAlgorithm()
 	if ident, ok := signatureMethodIdentifiers[algo][ctx.Hash]; ok {
 		return ident
 	}
