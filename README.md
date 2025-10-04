@@ -28,6 +28,81 @@ type AppHdr struct {
 }
 ```
 
+### Using the Signer Interface
+
+The library now provides a clean `Signer` interface for implementing different signing mechanisms:
+
+```go
+// Signer represents an entity capable of creating digital signatures
+type Signer interface {
+    // Sign creates a signature for the given digest
+    Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error)
+    
+    // Algorithm returns the signature algorithm identifier for this signer
+    Algorithm() SignatureAlgorithm
+    
+    // GetCertificate returns the certificate associated with this signer
+    GetCertificate() ([]byte, error)
+}
+```
+
+Built-in implementations include:
+- `FileSigner`: For file-based RSA keys
+- `PKCS11Signer`: For hardware-based keys using PKCS#11
+
+#### Example with FileSigner
+
+```go
+import (
+    "crypto"
+    "crypto/x509"
+    
+    "github.com/russellhaering/goxmldsig"
+)
+
+// Load a private key and certificate from files
+privateKey, cert := loadKeysFromFiles()
+
+// Create a FileSigner
+signer, err := dsig.NewFileSigner(privateKey, cert, crypto.SHA256)
+if err != nil {
+    // handle error
+}
+
+// Create a signing context with the signer
+ctx := dsig.NewDefaultSigningContextWithSigner(signer)
+
+// Use the context to sign XML
+signedXML, err := ctx.SignEnveloped(xmlElement)
+```
+
+#### Example with PKCS11Signer
+
+```go
+import (
+    "crypto"
+    "crypto/x509"
+    
+    "github.com/russellhaering/goxmldsig"
+    "github.com/yourpkcs11provider/pkcs11"
+)
+
+// Initialize your PKCS11 provider and get a crypto.Signer implementation
+p11Signer, cert := initializePKCS11()
+
+// Create a PKCS11Signer
+signer, err := dsig.NewPKCS11SignerFromX509(p11Signer, cert, crypto.SHA256)
+if err != nil {
+    // handle error
+}
+
+// Create a signing context with the signer
+ctx := dsig.NewDefaultSigningContextWithSigner(signer)
+
+// Use the context to sign XML
+signedXML, err := ctx.SignEnveloped(xmlElement)
+```
+
 ### Signing
 
 ```go
