@@ -547,6 +547,18 @@ func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Cer
 		return nil, err
 	}
 
+	// Direct trust: if the leaf cert matches a cert in the store, accept it
+	// without chain validation. This preserves backwards compatibility with
+	// deployments that pin a CA-issued leaf certificate directly.
+	for _, root := range roots {
+		if root.Equal(leafCert) {
+			if now.Before(leafCert.NotBefore) || now.After(leafCert.NotAfter) {
+				return nil, errors.New("cert is not valid at this time")
+			}
+			return leafCert, nil
+		}
+	}
+
 	intermediatePool := x509.NewCertPool()
 	if len(sig.KeyInfo.X509Data.X509Certificates) > 1 {
 		for _, cert := range sig.KeyInfo.X509Data.X509Certificates[1:] {
@@ -567,6 +579,7 @@ func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Cer
 		Roots:         rootPool,
 		Intermediates: intermediatePool,
 		CurrentTime:   now,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 	}
 
 	// 4. Perform the actual chain verification
