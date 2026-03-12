@@ -3,7 +3,7 @@
 Creative approaches to finding vulnerabilities in goxmldsig v2, beyond the
 unit/fuzz/security tests already in place (134 tests, 6 fuzz targets).
 
-## 1. Differential Canonicalization Testing
+## 1. Differential Canonicalization Testing ✅
 
 **Priority: High** · **Effort: Medium** · **Bug-yield: Very High**
 
@@ -12,16 +12,24 @@ If Go's C14N produces different output than the signer's C14N for the same
 input, an attacker can craft XML that verifies under one implementation but
 not the other — enabling signature forgery.
 
-- [ ] Install `xmlsec1` (libxml2-based reference implementation)
-- [ ] Build a test harness that generates XML, canonicalizes with both Go and
-      `xmlsec1`, and compares output byte-for-byte
-- [ ] Cover all six C14N variants:
+- [x] Install `xmllint` (libxml2-based reference implementation)
+- [x] Build a test harness that generates XML, canonicalizes with both Go and
+      `xmllint`, and compares output byte-for-byte (`differential_c14n_test.go`)
+- [x] Cover all six C14N variants:
   - Exclusive C14N 1.0 (with and without comments)
   - Inclusive C14N 1.1 (with and without comments)
   - Inclusive C14N 1.0 (with and without comments)
-- [ ] Seed with adversarial inputs: deep nesting, unusual namespace patterns,
-      mixed content, CDATA, processing instructions, whitespace-only text nodes
-- [ ] Run as a fuzzer: generate random XML → diff the two outputs
+- [x] Seed with adversarial inputs: 21 XML files + 15 inline inputs covering
+      deep nesting, namespace patterns, SAML, unicode, mixed content
+- [x] Run as a fuzzer: `FuzzDifferentialC14N` generates random XML and diffs
+- [x] **BUG FOUND**: Attribute sort order was wrong — sorted by prefix instead
+      of namespace URI. Fixed in `etreeutils/sort.go`.
+- [x] Bit-flip exhaustive test: flips every bit in a signed document, verifies
+      each mutation is detected (or is a benign base64 padding bit)
+- [x] Attribute and namespace permutation tests: verify canonical form is
+      invariant to declaration ordering
+- [ ] Known limitation: etree does not normalize tab/newline in attribute values
+      (parser-level issue, not goxmldsig)
 
 ## 2. Property-Based / Metamorphic Testing
 
@@ -42,20 +50,26 @@ Test semantic invariants rather than specific inputs. Any violation is a bug.
 - [ ] **Sign-verify roundtrip**: For any well-formed XML and any key type,
       `sign → verify` must succeed, `sign → mutate → verify` must fail
 
-## 3. W3C Conformance Test Vectors
+## 3. W3C Conformance Test Vectors ✅
 
 **Priority: High** · **Effort: Low** · **Bug-yield: High**
 
 The W3C published official test vectors. Any failure = spec non-compliance =
 potential exploit path.
 
-- [ ] Download [Canonical XML 1.0 test cases](https://www.w3.org/TR/xml-c14n-testcases/)
-- [ ] Download [Exclusive C14N test cases](https://www.w3.org/TR/xml-exc-c14n/#sec-Specification)
-- [ ] Download [Canonical XML 1.1 test cases](https://www.w3.org/TR/xml-c14n11/#Examples)
-- [ ] Write `TestW3CC14NConformance` that runs each official input through our
-      canonicalizer and compares against the expected output
-- [ ] Track which test cases pass/fail; file issues for failures
-- [ ] Also consider the [XML-DSig interop test suite](https://www.w3.org/Signature/2002/02/01-interop.html)
+- [x] Download [W3C C14N 2.0 test files](https://www.w3.org/TR/xml-c14n-testcases/files/)
+      — stored in `testdata/w3c/`
+- [x] Write `TestW3CC14NConformance` that runs 21 inputs through all 3 C14N
+      methods and compares against xmllint-generated reference outputs
+- [x] W3C C14N 1.0 Section 3.3 inline test vectors (start/end tags, attribute
+      sorting, empty elements)
+- [x] Exclusive C14N namespace pushdown tests from spec Section 4
+- [x] Exclusive C14N InclusiveNamespaces PrefixList tests
+- [x] Comment handling tests (with/without comments for all 6 C14N variants)
+- [x] Namespace redeclaration, superfluous declaration stripping tests
+- [x] Idempotency property test: `c14n(c14n(x)) == c14n(x)`
+- [x] All test cases pass (3 skipped for known etree limitation)
+- [ ] Consider the [XML-DSig interop test suite](https://www.w3.org/Signature/2002/02/01-interop.html)
       for end-to-end sign/verify interop
 
 ## 4. Cross-Reference Confusion Attacks
@@ -158,3 +172,9 @@ XML-DSig documents.
 - [x] Fuzz targets — 6 targets
 - [x] Fix: ASN.1 parsing panic in `convertECDSAASN1ToRawRS`
 - [x] Fix: Constant-time digest comparison (`crypto/subtle.ConstantTimeCompare`)
+- [x] Fix: C14N attribute sort order — sorted by prefix instead of namespace URI
+- [x] Differential C14N testing against xmllint (libxml2)
+- [x] W3C conformance test vectors (21 inputs × 3 C14N methods)
+- [x] Bit-flip exhaustive mutation test
+- [x] Attribute/namespace permutation invariance tests
+- [x] Differential C14N fuzzer (`FuzzDifferentialC14N`)

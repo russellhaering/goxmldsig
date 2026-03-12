@@ -3,6 +3,7 @@ package dsig
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -463,51 +464,54 @@ func TestDifferentialC14NBitFlipDetection(t *testing.T) {
 		rejected, parseFails, base64Padding, len(origBytes)*8)
 }
 
-// isBase64PaddingBit returns true if the bit at the given position is a base64
-// padding bit (a trailing zero bit in the last data character before '=' padding).
+// isBase64PaddingBit checks whether flipping this bit produces a different
+// base64 string that decodes to the same bytes. This happens when the bit
+// only affects padding zeros in the last base64 group.
 func isBase64PaddingBit(xml string, byteIdx, bitIdx int) bool {
-	// Check if we're inside a base64-encoded element value just before '=' padding
 	if byteIdx >= len(xml) {
 		return false
 	}
 
-	// Look ahead for '=' or '==' within a few characters
-	for ahead := 1; ahead <= 3 && byteIdx+ahead < len(xml); ahead++ {
-		ch := xml[byteIdx+ahead]
-		if ch == '=' {
-			// Count padding chars
-			padding := 0
-			for p := byteIdx + ahead; p < len(xml) && xml[p] == '='; p++ {
-				padding++
-			}
-			if padding == 0 {
-				continue
-			}
-
-			// The character just before the '=' signs is the last data char.
-			// With == padding: 2 base64 chars encode 1 byte, 4 trailing bits are padding.
-			// With = padding: 3 base64 chars encode 2 bytes, 2 trailing bits are padding.
-			lastDataCharIdx := byteIdx + ahead - 1
-			if byteIdx == lastDataCharIdx {
-				var paddingBits int
-				if padding >= 2 {
-					paddingBits = 4 // bits 0-3 are padding
-				} else {
-					paddingBits = 2 // bits 0-1 are padding
-				}
-				if bitIdx < paddingBits {
-					return true
-				}
-			}
-			return false
-		}
-		// Skip valid base64 characters
-		if !isBase64Char(ch) {
-			break
-		}
+	ch := xml[byteIdx]
+	if !isBase64Char(ch) {
+		return false
 	}
 
-	return false
+	// Find the enclosing base64 content: scan forward for '</'
+	// and backward for '>'
+	start := byteIdx
+	for start > 0 && xml[start-1] != '>' {
+		start--
+	}
+	end := byteIdx
+	for end < len(xml) && xml[end] != '<' {
+		end++
+	}
+
+	origContent := xml[start:end]
+
+	// Check if this looks like base64 with padding
+	trimmed := strings.TrimRight(strings.TrimSpace(origContent), "=")
+	if len(trimmed) == len(strings.TrimSpace(origContent)) {
+		return false // no padding
+	}
+
+	// Decode original
+	origDecoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(origContent))
+	if err != nil {
+		return false
+	}
+
+	// Flip the bit and decode mutated
+	mutBytes := []byte(xml)
+	mutBytes[byteIdx] ^= 1 << uint(bitIdx)
+	mutContent := string(mutBytes[start:end])
+	mutDecoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(mutContent))
+	if err != nil {
+		return false
+	}
+
+	return bytes.Equal(origDecoded, mutDecoded)
 }
 
 func isBase64Char(c byte) bool {
