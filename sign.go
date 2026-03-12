@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	_ "crypto/sha1"
 	_ "crypto/sha256"
+	"encoding/asn1"
 	"crypto/x509"
 	"encoding/base64"
 	"errors"
@@ -155,65 +156,21 @@ func (s *Signer) signDigest(digest []byte) ([]byte, error) {
 // the raw r||s format required by XML-DSig. Each integer is zero-padded to
 // the byte length of the curve order.
 func convertECDSAASN1ToRawRS(derSig []byte, curve elliptic.Curve) ([]byte, error) {
-	var r, sInt big.Int
+	var sig struct{ R, S *big.Int }
 
-	// Parse ASN.1: SEQUENCE { INTEGER r, INTEGER s }
-	// Simple hand-parse to avoid importing encoding/asn1
-	if len(derSig) < 6 || derSig[0] != 0x30 {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature")
+	if _, err := asn1.Unmarshal(derSig, &sig); err != nil {
+		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: %w", err)
 	}
-
-	pos := 2
-	if derSig[1]&0x80 != 0 {
-		// Long form length (unlikely for ECDSA sigs but handle it)
-		lenBytes := int(derSig[1] & 0x7f)
-		pos = 2 + lenBytes
-		if pos >= len(derSig) {
-			return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: truncated after long-form length")
-		}
-	}
-
-	// Parse r
-	if pos >= len(derSig) || derSig[pos] != 0x02 {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: missing r INTEGER tag")
-	}
-	pos++
-	if pos >= len(derSig) {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: truncated r length")
-	}
-	rLen := int(derSig[pos])
-	pos++
-	if pos+rLen > len(derSig) {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: r length exceeds data")
-	}
-	r.SetBytes(derSig[pos : pos+rLen])
-	pos += rLen
-
-	// Parse s
-	if pos >= len(derSig) || derSig[pos] != 0x02 {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: missing s INTEGER tag")
-	}
-	pos++
-	if pos >= len(derSig) {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: truncated s length")
-	}
-	sLen := int(derSig[pos])
-	pos++
-	if pos+sLen > len(derSig) {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: s length exceeds data")
-	}
-	sInt.SetBytes(derSig[pos : pos+sLen])
 
 	byteLen := (curve.Params().BitSize + 7) / 8
-	rawSig := make([]byte, 2*byteLen)
 
-	rBytes := r.Bytes()
-	sBytes := sInt.Bytes()
-
+	rBytes := sig.R.Bytes()
+	sBytes := sig.S.Bytes()
 	if len(rBytes) > byteLen || len(sBytes) > byteLen {
-		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: integer value exceeds curve size")
+		return nil, fmt.Errorf("dsig: ECDSA signature integer exceeds curve size")
 	}
 
+	rawSig := make([]byte, 2*byteLen)
 	copy(rawSig[byteLen-len(rBytes):byteLen], rBytes)
 	copy(rawSig[2*byteLen-len(sBytes):], sBytes)
 
