@@ -1,8 +1,8 @@
 package dsig
 
 import (
-	"bytes"
 	"crypto"
+	"crypto/subtle"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -684,7 +684,7 @@ func (v *Verifier) verifyDigest(el *etree.Element, origSig *parsedSignature, ver
 
 	computedDigest := hash.Sum(nil)
 
-	if !bytes.Equal(computedDigest, signedDigestValue) {
+	if subtle.ConstantTimeCompare(computedDigest, signedDigestValue) != 1 {
 		return nil, ErrDigestMismatch
 	}
 
