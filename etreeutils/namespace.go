@@ -21,7 +21,7 @@ func NewDefaultNSContext() NSContext {
 	defaultLimit := 1000
 	return NSContext{
 		prefixes: map[string]string{
-			defaultPrefix: XMLNamespace,
+			defaultPrefix: "",
 			xmlPrefix:     XMLNamespace,
 			xmlnsPrefix:   XMLNSNamespace,
 		},
@@ -36,6 +36,7 @@ var (
 	ErrInvalidDefaultNamespace = errors.New("invalid default namespace declaration")
 	ErrTraversalHalted         = errors.New("traversal halted")
 	ErrTraversalLimit          = errors.New("traversal limit reached")
+	ErrElementNotFound         = errors.New("element not found")
 )
 
 type ErrUndeclaredNSPrefix struct {
@@ -180,9 +181,9 @@ func NSTraverse(ctx NSContext, el *etree.Element, handle NSIterHandler) error {
 	return nil
 }
 
-// NSDetatch makes a copy of the passed element, and declares any namespaces in
+// NSDetach makes a copy of the passed element, and declares any namespaces in
 // the passed context onto the new element before returning it.
-func NSDetatch(ctx NSContext, el *etree.Element) (*etree.Element, error) {
+func NSDetach(ctx NSContext, el *etree.Element) (*etree.Element, error) {
 	ctx, err := ctx.SubContext(el)
 	if err != nil {
 		return nil, err
@@ -213,8 +214,9 @@ func NSDetatch(ctx NSContext, el *etree.Element) (*etree.Element, error) {
 			continue
 		}
 
-		// Also skip declararing the default namespace as XMLNamespace
-		if prefix == defaultPrefix && namespace == XMLNamespace {
+		// Skip empty default namespace - it is the initial state and
+		// does not need to be declared.
+		if prefix == defaultPrefix && namespace == "" {
 			continue
 		}
 
@@ -255,7 +257,7 @@ func NSSelectOneCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*e
 	err := NSFindIterateCtx(ctx, el, namespace, tag, func(ctx NSContext, el *etree.Element) error {
 		var err error
 
-		found, err = NSDetatch(ctx, el)
+		found, err = NSDetach(ctx, el)
 		if err != nil {
 			return err
 		}
@@ -264,6 +266,10 @@ func NSSelectOneCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*e
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if found == nil {
+		return nil, ErrElementNotFound
 	}
 
 	return found, nil

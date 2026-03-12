@@ -64,7 +64,7 @@ const (
 	CanonicalXML10RecAlgorithmId          AlgorithmID = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
 	CanonicalXML10WithCommentsAlgorithmId AlgorithmID = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments"
 
-	EnvelopedSignatureAltorithmId AlgorithmID = "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
+	EnvelopedSignatureAlgorithmId AlgorithmID = "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
 )
 
 var digestAlgorithmIdentifiers = map[crypto.Hash]string{

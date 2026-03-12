@@ -4,7 +4,7 @@ import (
 	"sort"
 
 	"github.com/beevik/etree"
-	"github.com/russellhaering/goxmldsig/etreeutils"
+	"github.com/russellhaering/goxmldsig/v2/etreeutils"
 )
 
 // Canonicalizer is an implementation of a canonicalization algorithm.
@@ -259,6 +259,11 @@ func getParentNamespaceAndXmlAttributes(el *etree.Element) (map[string]string, m
 
 func enhanceNamespaceAttributes(el *etree.Element, parentNamespaces map[string]string, parentXmlAttributes map[string]string) {
 	for prefix, uri := range parentNamespaces {
+		// Skip empty namespace URIs - they are undeclarations and should
+		// not be injected onto subset root elements.
+		if uri == "" {
+			continue
+		}
 		if prefix == "xmlns" {
 			el.CreateAttr("xmlns", uri)
 		} else {

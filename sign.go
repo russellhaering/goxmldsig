@@ -3,6 +3,8 @@ package dsig
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	_ "crypto/sha1"
@@ -11,95 +13,116 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/beevik/etree"
-	"github.com/russellhaering/goxmldsig/etreeutils"
+	"github.com/russellhaering/goxmldsig/v2/etreeutils"
 )
 
-type SigningContext struct {
+// Signer creates enveloped XML digital signatures.
+type Signer struct {
+	// Key is the crypto.Signer used to create signatures.
+	Key crypto.Signer
+
+	// Certs is the certificate chain to embed in the signature's KeyInfo.
+	Certs []*x509.Certificate
+
+	// IDAttribute is the XML attribute used to reference the signed element.
+	// Default: "ID"
+	IDAttribute string
+
+	// Prefix is the XML namespace prefix for ds: elements.
+	// Default: "ds"
+	Prefix string
+
+	// Hash selects the digest and signature hash algorithm.
+	// Default: crypto.SHA256
 	Hash crypto.Hash
 
-	// This field will be nil and unused if the SigningContext is created with
-	// NewSigningContext
-	KeyStore      X509KeyStore
-	IdAttribute   string
-	Prefix        string
+	// Canonicalizer is the canonicalization algorithm for signing.
+	// Default: Inclusive C14N 1.1
 	Canonicalizer Canonicalizer
-
-	// KeyStore is mutually exclusive with signer and certs
-	signer crypto.Signer
-	certs  [][]byte
 }
 
-func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
-	return &SigningContext{
-		Hash:          crypto.SHA256,
-		KeyStore:      ks,
-		IdAttribute:   DefaultIdAttr,
-		Prefix:        DefaultPrefix,
-		Canonicalizer: MakeC14N11Canonicalizer(),
+func (s *Signer) idAttribute() string {
+	if s.IDAttribute == "" {
+		return DefaultIdAttr
 	}
+	return s.IDAttribute
 }
 
-// NewSigningContext creates a new signing context with the given signer and certificate chain.
-// Note that e.g. rsa.PrivateKey implements the crypto.Signer interface.
-// The certificate chain is a slice of ASN.1 DER-encoded X.509 certificates.
-// A SigningContext created with this function should not use the KeyStore field.
-// It will return error if passed a nil crypto.Signer
-func NewSigningContext(signer crypto.Signer, certs [][]byte) (*SigningContext, error) {
-	if signer == nil {
-		return nil, errors.New("signer cannot be nil for NewSigningContext")
+func (s *Signer) prefix() string {
+	if s.Prefix == "" {
+		return DefaultPrefix
 	}
-	ctx := &SigningContext{
-		Hash:          crypto.SHA256,
-		IdAttribute:   DefaultIdAttr,
-		Prefix:        DefaultPrefix,
-		Canonicalizer: MakeC14N11Canonicalizer(),
-
-		signer: signer,
-		certs:  certs,
-	}
-	return ctx, nil
+	return s.Prefix
 }
 
-func (ctx *SigningContext) getPublicKeyAlgorithm() x509.PublicKeyAlgorithm {
-	if ctx.KeyStore != nil {
-		return x509.RSA
-	} else {
-		switch ctx.signer.Public().(type) {
-		case *ecdsa.PublicKey:
-			return x509.ECDSA
-		case *rsa.PublicKey:
-			return x509.RSA
-		}
+func (s *Signer) hash() crypto.Hash {
+	if s.Hash == 0 {
+		return crypto.SHA256
 	}
-
-	return x509.UnknownPublicKeyAlgorithm
+	return s.Hash
 }
 
-func (ctx *SigningContext) SetSignatureMethod(algorithmID string) error {
-	info, ok := signatureMethodsByIdentifier[algorithmID]
-	if !ok {
-		return fmt.Errorf("unknown SignatureMethod: %s", algorithmID)
+func (s *Signer) canonicalizer() Canonicalizer {
+	if s.Canonicalizer == nil {
+		return MakeC14N11Canonicalizer()
 	}
+	return s.Canonicalizer
+}
 
-	algo := ctx.getPublicKeyAlgorithm()
-	if info.PublicKeyAlgorithm != algo {
-		return fmt.Errorf("SignatureMethod %s is incompatible with %s key", algorithmID, algo)
+func (s *Signer) validate() error {
+	if s.Key == nil {
+		return errors.New("dsig: Key must not be nil")
 	}
-
-	ctx.Hash = info.Hash
-
+	if len(s.Certs) == 0 {
+		return errors.New("dsig: Certs must not be empty")
+	}
+	if _, ok := s.Key.Public().(ed25519.PublicKey); ok {
+		return errors.New("dsig: Ed25519 keys are not supported (no standardized XML-DSig algorithm URI)")
+	}
 	return nil
 }
 
-func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
-	canonical, err := ctx.Canonicalizer.Canonicalize(el)
+func (s *Signer) getPublicKeyAlgorithm() x509.PublicKeyAlgorithm {
+	switch s.Key.Public().(type) {
+	case *ecdsa.PublicKey:
+		return x509.ECDSA
+	case *rsa.PublicKey:
+		return x509.RSA
+	}
+	return x509.UnknownPublicKeyAlgorithm
+}
+
+func (s *Signer) getSignatureMethodIdentifier() string {
+	algo := s.getPublicKeyAlgorithm()
+	if ident, ok := signatureMethodIdentifiers[algo][s.hash()]; ok {
+		return ident
+	}
+	return ""
+}
+
+func (s *Signer) getDigestAlgorithmIdentifier() string {
+	if ident, ok := digestAlgorithmIdentifiers[s.hash()]; ok {
+		return ident
+	}
+	return ""
+}
+
+func (s *Signer) createNamespacedElement(el *etree.Element, tag string) *etree.Element {
+	child := el.CreateElement(tag)
+	child.Space = s.prefix()
+	return child
+}
+
+func (s *Signer) digest(el *etree.Element) ([]byte, error) {
+	canonical, err := s.canonicalizer().Canonicalize(el)
 	if err != nil {
 		return nil, err
 	}
 
-	hash := ctx.Hash.New()
+	hash := s.hash().New()
 	_, err = hash.Write(canonical)
 	if err != nil {
 		return nil, err
@@ -108,79 +131,109 @@ func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-func (ctx *SigningContext) signDigest(digest []byte) ([]byte, error) {
-	if ctx.KeyStore != nil {
-		key, _, err := ctx.KeyStore.GetKeyPair()
-		if err != nil {
-			return nil, err
-		}
-
-		rawSignature, err := rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
-		if err != nil {
-			return nil, err
-		}
-
-		return rawSignature, nil
-	} else {
-		rawSignature, err := ctx.signer.Sign(rand.Reader, digest, ctx.Hash)
-		if err != nil {
-			return nil, err
-		}
-
-		return rawSignature, nil
+// signDigest signs a digest using the configured key. For ECDSA, it converts
+// the ASN.1 DER output from crypto.Signer.Sign() to raw r||s as required by
+// XML-DSig.
+func (s *Signer) signDigest(digest []byte) ([]byte, error) {
+	rawSignature, err := s.Key.Sign(rand.Reader, digest, s.hash())
+	if err != nil {
+		return nil, err
 	}
+
+	// For ECDSA, convert ASN.1 DER to raw r||s
+	if ecKey, ok := s.Key.Public().(*ecdsa.PublicKey); ok {
+		rawSignature, err = convertECDSAASN1ToRawRS(rawSignature, ecKey.Curve)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return rawSignature, nil
 }
 
-func (ctx *SigningContext) getCerts() ([][]byte, error) {
-	if ctx.KeyStore != nil {
-		if cs, ok := ctx.KeyStore.(X509ChainStore); ok {
-			return cs.GetChain()
-		}
+// convertECDSAASN1ToRawRS converts an ASN.1 DER-encoded ECDSA signature to
+// the raw r||s format required by XML-DSig. Each integer is zero-padded to
+// the byte length of the curve order.
+func convertECDSAASN1ToRawRS(derSig []byte, curve elliptic.Curve) ([]byte, error) {
+	var r, sInt big.Int
 
-		_, cert, err := ctx.KeyStore.GetKeyPair()
-		if err != nil {
-			return nil, err
-		}
-
-		return [][]byte{cert}, nil
-	} else {
-		return ctx.certs, nil
+	// Parse ASN.1: SEQUENCE { INTEGER r, INTEGER s }
+	// Simple hand-parse to avoid importing encoding/asn1
+	if len(derSig) < 6 || derSig[0] != 0x30 {
+		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature")
 	}
+
+	pos := 2
+	if derSig[1]&0x80 != 0 {
+		// Long form length (unlikely for ECDSA sigs but handle it)
+		lenBytes := int(derSig[1] & 0x7f)
+		pos = 2 + lenBytes
+	}
+
+	// Parse r
+	if pos >= len(derSig) || derSig[pos] != 0x02 {
+		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: missing r INTEGER tag")
+	}
+	pos++
+	rLen := int(derSig[pos])
+	pos++
+	r.SetBytes(derSig[pos : pos+rLen])
+	pos += rLen
+
+	// Parse s
+	if pos >= len(derSig) || derSig[pos] != 0x02 {
+		return nil, fmt.Errorf("dsig: invalid ASN.1 ECDSA signature: missing s INTEGER tag")
+	}
+	pos++
+	sLen := int(derSig[pos])
+	pos++
+	sInt.SetBytes(derSig[pos : pos+sLen])
+
+	byteLen := (curve.Params().BitSize + 7) / 8
+	rawSig := make([]byte, 2*byteLen)
+
+	rBytes := r.Bytes()
+	sBytes := sInt.Bytes()
+
+	copy(rawSig[byteLen-len(rBytes):byteLen], rBytes)
+	copy(rawSig[2*byteLen-len(sBytes):], sBytes)
+
+	return rawSig, nil
 }
 
-func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool) (*etree.Element, error) {
-	digestAlgorithmIdentifier := ctx.GetDigestAlgorithmIdentifier()
+func (s *Signer) constructSignedInfo(el *etree.Element, enveloped bool) (*etree.Element, error) {
+	digestAlgorithmIdentifier := s.getDigestAlgorithmIdentifier()
 	if digestAlgorithmIdentifier == "" {
 		return nil, errors.New("unsupported hash mechanism")
 	}
 
-	signatureMethodIdentifier := ctx.GetSignatureMethodIdentifier()
+	signatureMethodIdentifier := s.getSignatureMethodIdentifier()
 	if signatureMethodIdentifier == "" {
 		return nil, errors.New("unsupported signature method")
 	}
 
-	digest, err := ctx.digest(el)
+	digest, err := s.digest(el)
 	if err != nil {
 		return nil, err
 	}
 
 	signedInfo := &etree.Element{
 		Tag:   SignedInfoTag,
-		Space: ctx.Prefix,
+		Space: s.prefix(),
 	}
 
 	// /SignedInfo/CanonicalizationMethod
-	canonicalizationMethod := ctx.createNamespacedElement(signedInfo, CanonicalizationMethodTag)
-	canonicalizationMethod.CreateAttr(AlgorithmAttr, string(ctx.Canonicalizer.Algorithm()))
+	canonicalizationMethod := s.createNamespacedElement(signedInfo, CanonicalizationMethodTag)
+	canonicalizationMethod.CreateAttr(AlgorithmAttr, string(s.canonicalizer().Algorithm()))
 
 	// /SignedInfo/SignatureMethod
-	signatureMethod := ctx.createNamespacedElement(signedInfo, SignatureMethodTag)
+	signatureMethod := s.createNamespacedElement(signedInfo, SignatureMethodTag)
 	signatureMethod.CreateAttr(AlgorithmAttr, signatureMethodIdentifier)
 
 	// /SignedInfo/Reference
-	reference := ctx.createNamespacedElement(signedInfo, ReferenceTag)
+	reference := s.createNamespacedElement(signedInfo, ReferenceTag)
 
-	dataId := el.SelectAttrValue(ctx.IdAttribute, "")
+	dataId := el.SelectAttrValue(s.idAttribute(), "")
 	if dataId == "" {
 		reference.CreateAttr(URIAttr, "")
 	} else {
@@ -188,110 +241,96 @@ func (ctx *SigningContext) constructSignedInfo(el *etree.Element, enveloped bool
 	}
 
 	// /SignedInfo/Reference/Transforms
-	transforms := ctx.createNamespacedElement(reference, TransformsTag)
+	transforms := s.createNamespacedElement(reference, TransformsTag)
 	if enveloped {
-		envelopedTransform := ctx.createNamespacedElement(transforms, TransformTag)
-		envelopedTransform.CreateAttr(AlgorithmAttr, EnvelopedSignatureAltorithmId.String())
+		envelopedTransform := s.createNamespacedElement(transforms, TransformTag)
+		envelopedTransform.CreateAttr(AlgorithmAttr, EnvelopedSignatureAlgorithmId.String())
 	}
-	canonicalizationAlgorithm := ctx.createNamespacedElement(transforms, TransformTag)
-	canonicalizationAlgorithm.CreateAttr(AlgorithmAttr, string(ctx.Canonicalizer.Algorithm()))
+	canonicalizationAlgorithm := s.createNamespacedElement(transforms, TransformTag)
+	canonicalizationAlgorithm.CreateAttr(AlgorithmAttr, string(s.canonicalizer().Algorithm()))
 
 	// /SignedInfo/Reference/DigestMethod
-	digestMethod := ctx.createNamespacedElement(reference, DigestMethodTag)
+	digestMethod := s.createNamespacedElement(reference, DigestMethodTag)
 	digestMethod.CreateAttr(AlgorithmAttr, digestAlgorithmIdentifier)
 
 	// /SignedInfo/Reference/DigestValue
-	digestValue := ctx.createNamespacedElement(reference, DigestValueTag)
+	digestValue := s.createNamespacedElement(reference, DigestValueTag)
 	digestValue.SetText(base64.StdEncoding.EncodeToString(digest))
 
 	return signedInfo, nil
 }
 
-func (ctx *SigningContext) ConstructSignature(el *etree.Element, enveloped bool) (*etree.Element, error) {
-	signedInfo, err := ctx.constructSignedInfo(el, enveloped)
+func (s *Signer) constructSignature(el *etree.Element, enveloped bool) (*etree.Element, error) {
+	signedInfo, err := s.constructSignedInfo(el, enveloped)
 	if err != nil {
 		return nil, err
 	}
 
 	sig := &etree.Element{
 		Tag:   SignatureTag,
-		Space: ctx.Prefix,
+		Space: s.prefix(),
 	}
 
 	xmlns := "xmlns"
-	if ctx.Prefix != "" {
-		xmlns += ":" + ctx.Prefix
+	if s.prefix() != "" {
+		xmlns += ":" + s.prefix()
 	}
 
 	sig.CreateAttr(xmlns, Namespace)
 	sig.AddChild(signedInfo)
 
-	// When using xml-c14n11 (ie, non-exclusive canonicalization) the canonical form
-	// of the SignedInfo must declare all namespaces that are in scope at it's final
-	// enveloped location in the document. In order to do that, we're going to construct
-	// a series of cascading NSContexts to capture namespace declarations:
-
-	// First get the context surrounding the element we are signing.
+	// Build cascading NS contexts for proper canonicalization of SignedInfo
 	rootNSCtx, err := etreeutils.NSBuildParentContext(el)
 	if err != nil {
 		return nil, err
 	}
 
-	// Then capture any declarations on the element itself.
 	elNSCtx, err := rootNSCtx.SubContext(el)
 	if err != nil {
 		return nil, err
 	}
 
-	// Followed by declarations on the Signature (which we just added above)
 	sigNSCtx, err := elNSCtx.SubContext(sig)
 	if err != nil {
 		return nil, err
 	}
 
-	// Finally detatch the SignedInfo in order to capture all of the namespace
-	// declarations in the scope we've constructed.
-	detatchedSignedInfo, err := etreeutils.NSDetatch(sigNSCtx, signedInfo)
+	detachedSignedInfo, err := etreeutils.NSDetach(sigNSCtx, signedInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	digest, err := ctx.digest(detatchedSignedInfo)
+	digest, err := s.digest(detachedSignedInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	rawSignature, err := ctx.signDigest(digest)
+	rawSignature, err := s.signDigest(digest)
 	if err != nil {
 		return nil, err
 	}
 
-	certs, err := ctx.getCerts()
-	if err != nil {
-		return nil, err
-	}
-
-	signatureValue := ctx.createNamespacedElement(sig, SignatureValueTag)
+	signatureValue := s.createNamespacedElement(sig, SignatureValueTag)
 	signatureValue.SetText(base64.StdEncoding.EncodeToString(rawSignature))
 
-	keyInfo := ctx.createNamespacedElement(sig, KeyInfoTag)
-	x509Data := ctx.createNamespacedElement(keyInfo, X509DataTag)
-	for _, cert := range certs {
-		x509Certificate := ctx.createNamespacedElement(x509Data, X509CertificateTag)
-		x509Certificate.SetText(base64.StdEncoding.EncodeToString(cert))
+	keyInfo := s.createNamespacedElement(sig, KeyInfoTag)
+	x509Data := s.createNamespacedElement(keyInfo, X509DataTag)
+	for _, cert := range s.Certs {
+		x509Certificate := s.createNamespacedElement(x509Data, X509CertificateTag)
+		x509Certificate.SetText(base64.StdEncoding.EncodeToString(cert.Raw))
 	}
 
 	return sig, nil
 }
 
-func (ctx *SigningContext) createNamespacedElement(el *etree.Element, tag string) *etree.Element {
-	child := el.CreateElement(tag)
-	child.Space = ctx.Prefix
-	return child
-}
+// SignEnveloped creates an enveloped signature on el and returns a deep copy
+// of el with the signature appended as the last child.
+func (s *Signer) SignEnveloped(el *etree.Element) (*etree.Element, error) {
+	if err := s.validate(); err != nil {
+		return nil, err
+	}
 
-func (ctx *SigningContext) SignEnveloped(el *etree.Element) (*etree.Element, error) {
-	sig, err := ctx.ConstructSignature(el, true)
+	sig, err := s.constructSignature(el, true)
 	if err != nil {
 		return nil, err
 	}
@@ -302,27 +341,14 @@ func (ctx *SigningContext) SignEnveloped(el *etree.Element) (*etree.Element, err
 	return ret, nil
 }
 
-func (ctx *SigningContext) GetSignatureMethodIdentifier() string {
-	algo := ctx.getPublicKeyAlgorithm()
-
-	if ident, ok := signatureMethodIdentifiers[algo][ctx.Hash]; ok {
-		return ident
+// SignString signs a raw string and returns the signature bytes.
+// Used for the SAML HTTP-Redirect binding.
+func (s *Signer) SignString(content string) ([]byte, error) {
+	if err := s.validate(); err != nil {
+		return nil, err
 	}
-	return ""
-}
 
-func (ctx *SigningContext) GetDigestAlgorithmIdentifier() string {
-	if ident, ok := digestAlgorithmIdentifiers[ctx.Hash]; ok {
-		return ident
-	}
-	return ""
-}
-
-// Useful for signing query string (including DEFLATED AuthnRequest) when
-// using HTTP-Redirect to make a signed request.
-// See 3.4.4.1 DEFLATE Encoding of https://docs.oasis-open.org/security/saml/v2.0/saml-bindings-2.0-os.pdf
-func (ctx *SigningContext) SignString(content string) ([]byte, error) {
-	hash := ctx.Hash.New()
+	hash := s.hash().New()
 	if ln, err := hash.Write([]byte(content)); err != nil {
 		return nil, fmt.Errorf("error calculating hash: %v", err)
 	} else if ln < 1 {
@@ -330,5 +356,5 @@ func (ctx *SigningContext) SignString(content string) ([]byte, error) {
 	}
 	digest := hash.Sum(nil)
 
-	return ctx.signDigest(digest)
+	return s.signDigest(digest)
 }

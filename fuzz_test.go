@@ -9,7 +9,6 @@ import (
 	"github.com/beevik/etree"
 )
 
-// seed corpus: a minimal signed XML document
 var fuzzSeedXML = `<Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol" ID="resp1"><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></ds:CanonicalizationMethod><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"></ds:SignatureMethod><ds:Reference URI="#resp1"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"></ds:Transform><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></ds:Transform></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></ds:DigestMethod><ds:DigestValue>dGVzdA==</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>dGVzdA==</ds:SignatureValue></ds:Signature></Response>`
 
 func FuzzValidateXML(f *testing.F) {
@@ -30,15 +29,18 @@ func FuzzValidateXML(f *testing.F) {
 			return
 		}
 
-		certStore := &MemoryX509CertificateStore{
-			Roots: []*x509.Certificate{},
+		verifier := &Verifier{
+			TrustedCerts: []*x509.Certificate{},
+			Clock:        func() time.Time { return time.Date(2016, 3, 15, 0, 22, 0, 0, time.UTC) },
+			AllowSHA1:    true,
 		}
 
-		ctx := NewDefaultValidationContext(certStore)
-		ctx.Clock = NewFakeClockAt(time.Date(2016, 3, 15, 0, 22, 0, 0, time.UTC))
-
-		// Errors are expected; we're looking for panics and hangs.
-		ctx.Validate(root)
+		// Errors are expected (no certs); we're looking for panics and hangs.
+		// Use at least one cert to get past the empty check
+		key, cert := randomTestKeyAndCert()
+		_ = key
+		verifier.TrustedCerts = []*x509.Certificate{cert}
+		verifier.Verify(root)
 	})
 }
 
@@ -71,8 +73,6 @@ func FuzzCanonicalize(f *testing.F) {
 		}
 
 		for _, c := range canonicalizers {
-			// Canonicalize a fresh copy for each canonicalizer,
-			// since some transform in-place.
 			c.Canonicalize(root.Copy())
 		}
 	})
@@ -95,37 +95,20 @@ func FuzzSignRoundTrip(f *testing.F) {
 			return
 		}
 
-		// Limit input size to keep signing tractable
 		if len(data) > 1024*64 {
 			return
 		}
 
-		ks := RandomKeyStoreForTest()
-		sigCtx := NewDefaultSigningContext(ks)
+		key, cert := randomTestKeyAndCert()
+		signer := &Signer{Key: key, Certs: []*x509.Certificate{cert}}
 
-		signed, err := sigCtx.SignEnveloped(root)
+		signed, err := signer.SignEnveloped(root)
 		if err != nil {
 			return
 		}
 
-		// Validate what we just signed
-		key, cert, err := ks.GetKeyPair()
-		if err != nil {
-			return
-		}
-		_ = key
-
-		parsedCert, err := x509.ParseCertificate(cert)
-		if err != nil {
-			return
-		}
-
-		certStore := &MemoryX509CertificateStore{
-			Roots: []*x509.Certificate{parsedCert},
-		}
-
-		valCtx := NewDefaultValidationContext(certStore)
-		valCtx.Validate(signed)
+		verifier := &Verifier{TrustedCerts: []*x509.Certificate{cert}}
+		verifier.Verify(signed)
 	})
 }
 
@@ -158,10 +141,6 @@ func FuzzValidateWithCert(f *testing.F) {
 		f.Fatal(err)
 	}
 
-	certStore := &MemoryX509CertificateStore{
-		Roots: []*x509.Certificate{cert},
-	}
-
 	f.Fuzz(func(t *testing.T, data []byte) {
 		doc := etree.NewDocument()
 		err := doc.ReadFromBytes(data)
@@ -174,10 +153,11 @@ func FuzzValidateWithCert(f *testing.F) {
 			return
 		}
 
-		ctx := NewDefaultValidationContext(certStore)
-		ctx.Clock = NewFakeClockAt(time.Date(2016, 3, 15, 0, 22, 0, 0, time.UTC))
+		verifier := &Verifier{
+			TrustedCerts: []*x509.Certificate{cert},
+			Clock:        func() time.Time { return time.Date(2016, 3, 15, 0, 22, 0, 0, time.UTC) },
+		}
 
-		// Errors are expected; we're looking for panics and hangs.
-		ctx.Validate(root)
+		verifier.Verify(root)
 	})
 }

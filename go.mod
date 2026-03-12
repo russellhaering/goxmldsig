@@ -1,4 +1,4 @@
-module github.com/russellhaering/goxmldsig
+module github.com/russellhaering/goxmldsig/v2
 
 go 1.21.0
 
@@ -6,7 +6,6 @@ toolchain go1.24.0
 
 require (
 	github.com/beevik/etree v1.5.0
-	github.com/jonboulle/clockwork v0.5.0
 	github.com/stretchr/testify v1.8.4
 )
 

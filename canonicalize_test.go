@@ -147,3 +147,47 @@ func TestC14N10RecCanonicalizerWithNamespaceInheritance(t *testing.T) {
 	require.Equal(t, strings.TrimSpace(expected), strings.TrimSpace(string(canonicalized)))
 
 }
+
+func TestC14N10RecNoSpuriousXmlnsEmpty(t *testing.T) {
+	// Regression test for #92: C14N 1.0 REC subset canonicalization should
+	// not inject xmlns="" when the default namespace was never declared.
+	input := `<Root xmlns="" xmlns:a="http://www.w3.org"><Child/></Root>`
+
+	doc := etree.NewDocument()
+	err := doc.ReadFromString(input)
+	require.NoError(t, err)
+
+	child := doc.FindElement("//Child")
+	require.NotNil(t, child)
+
+	canonicalizer := MakeC14N10RecCanonicalizer()
+	canonicalized, err := canonicalizer.Canonicalize(child)
+	require.NoError(t, err)
+
+	// Child should inherit xmlns:a from parent but not the redundant xmlns=""
+	expected := `<Child xmlns:a="http://www.w3.org"></Child>`
+	require.Equal(t, expected, string(canonicalized))
+}
+
+func TestC14N10RecPreservesXmlnsEmptyWhenNeeded(t *testing.T) {
+	// When a parent declares a non-empty default namespace and a closer
+	// ancestor undeclares it, the undeclaration must be inherited.
+	input := `<Root xmlns="http://example.com"><Middle xmlns=""><Child/></Middle></Root>`
+
+	doc := etree.NewDocument()
+	err := doc.ReadFromString(input)
+	require.NoError(t, err)
+
+	child := doc.FindElement("//Child")
+	require.NotNil(t, child)
+
+	canonicalizer := MakeC14N10RecCanonicalizer()
+	canonicalized, err := canonicalizer.Canonicalize(child)
+	require.NoError(t, err)
+
+	// Child must NOT inherit xmlns="http://example.com" since Middle undeclared it.
+	// The xmlns="" from Middle is also not needed since canonicalPrepInner
+	// correctly strips redundant empty default namespace declarations.
+	expected := `<Child></Child>`
+	require.Equal(t, expected, string(canonicalized))
+}
