@@ -47,6 +47,13 @@ func xmllintC14N(input []byte, mode string) ([]byte, error) {
 		return nil, fmt.Errorf("xmllint %s failed: %v\nstderr: %s", mode, err, stderr.String())
 	}
 
+	// xmllint may emit output even with namespace errors (exit 0 but stderr
+	// warnings). Treat namespace errors as failures since the input is
+	// namespace-malformed and C14N behavior is undefined on such inputs.
+	if strings.Contains(stderr.String(), "namespace error") {
+		return nil, fmt.Errorf("xmllint reported namespace error: %s", stderr.String())
+	}
+
 	return stdout.Bytes(), nil
 }
 
