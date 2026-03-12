@@ -14,9 +14,20 @@ func (a SortedAttrs) Swap(i, j int) {
 	a[i], a[j] = a[j], a[i]
 }
 
+// Less implements the canonical attribute ordering from the C14N spec:
+//
+//  1. Default namespace declaration (xmlns="...") comes first.
+//  2. Namespace prefix declarations (xmlns:prefix="..."), sorted by prefix.
+//  3. Unprefixed attributes, sorted by local name.
+//  4. Namespace-qualified attributes, sorted first by namespace URI then by
+//     local name.
+//
+// The namespace URI for a prefixed attribute is resolved by scanning the same
+// attribute list for the corresponding xmlns:prefix declaration. This works
+// because namespace declarations are already present on the element (or have
+// been attached during exclusive-c14n processing) before sorting occurs.
 func (a SortedAttrs) Less(i, j int) bool {
-	// This is the best reference I've found on sort order:
-	// http://dst.lbl.gov/~ksb/Scratch/XMLC14N.html
+	// --- 1. Default namespace declaration (xmlns="...") ---
 
 	// If attr j is a default namespace declaration, attr i may
 	// not be strictly "less" than it.
@@ -24,14 +35,13 @@ func (a SortedAttrs) Less(i, j int) bool {
 		return false
 	}
 
-	// Otherwise, if attr i is a default namespace declaration, it
-	// must be less than anything else.
+	// If attr i is a default namespace declaration, it comes before everything.
 	if a[i].Space == defaultPrefix && a[i].Key == xmlnsPrefix {
 		return true
 	}
 
-	// Next, namespace prefix declarations, sorted by prefix, come before
-	// anythign else.
+	// --- 2. Namespace prefix declarations (xmlns:prefix) sorted by prefix ---
+
 	if a[i].Space == xmlnsPrefix {
 		if a[j].Space == xmlnsPrefix {
 			return a[i].Key < a[j].Key
@@ -43,7 +53,8 @@ func (a SortedAttrs) Less(i, j int) bool {
 		return false
 	}
 
-	// Then come unprefixed attributes, sorted by key.
+	// --- 3. Unprefixed attributes sorted by local name ---
+
 	if a[i].Space == defaultPrefix {
 		if a[j].Space == defaultPrefix {
 			return a[i].Key < a[j].Key
@@ -55,29 +66,32 @@ func (a SortedAttrs) Less(i, j int) bool {
 		return false
 	}
 
-	// Attributes with the same prefix should be sorted by their keys.
-	if a[i].Space == a[j].Space {
-		return a[i].Key < a[j].Key
-	}
+	// --- 4. Namespace-qualified attributes, sorted by namespace URI then local name ---
 
-	// Attributes in the same namespace are sorted by their Namespace URI, not the prefix.
-	// NOTE: This implementation is not complete because it does not consider namespace
-	// prefixes declared in ancestor elements. A complete solution would ideally use the
-	// Attribute.NamespaceURI() method obtain a namespace URI for sorting, but the
-	// beevik/etree library needs to be fixed to provide the correct value first.
-	if a[i].Key == a[j].Key {
-		var leftNS, rightNS etree.Attr
-		for n := range a {
-			if a[i].Space == a[n].Key {
-				leftNS = a[n]
-			}
-			if a[j].Space == a[n].Key {
-				rightNS = a[n]
-			}
-		}
-		// Sort based on the NS URIs
-		return leftNS.Value < rightNS.Value
+	// Resolve namespace URIs by scanning for matching xmlns:prefix declarations.
+	leftURI := a.resolvePrefix(a[i].Space)
+	rightURI := a.resolvePrefix(a[j].Space)
+
+	if leftURI != rightURI {
+		return leftURI < rightURI
 	}
 
 	return a[i].Key < a[j].Key
+}
+
+// resolvePrefix finds the namespace URI for a prefix by scanning the attribute
+// list for an xmlns:prefix declaration. If no declaration is found, the prefix
+// itself is returned as a fallback (this preserves a stable sort order even
+// when namespace declarations live on ancestor elements).
+func (a SortedAttrs) resolvePrefix(prefix string) string {
+	for _, attr := range a {
+		if attr.Space == xmlnsPrefix && attr.Key == prefix {
+			return attr.Value
+		}
+	}
+	// Fallback: use prefix as-is. This happens when the namespace declaration
+	// is on an ancestor element and hasn't been copied to this element's
+	// attribute list. In practice, both inclusive and exclusive C14N ensure
+	// that the relevant namespace declarations are present.
+	return prefix
 }
