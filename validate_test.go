@@ -153,6 +153,48 @@ AwEHoUQDQgAEQhr0Z5nD1NUwC/tWefdvPQN1Cy1BMgeRKdh8rDpA5vFFkmha8NFy
 -----END EC PRIVATE KEY-----
 `
 
+// TestC14N11NamespaceInheritance demonstrates the C14N 1.1 canonicalization namespace inheritance issue.
+// This test creates a simple scenario where an XML element has namespace declarations that need to be
+// inherited during canonicalization. The test demonstrates the expected behavior.
+func TestC14N11NamespaceInheritance(t *testing.T) {
+	// Simple test case: XML with parent namespace that child should inherit
+	xmlContent := `<parent xmlns="http://example.com/default" xmlns:test="http://example.com/test">
+		<test:child>
+			<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+				<ds:SignedInfo>
+					<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/>
+				</ds:SignedInfo>
+			</ds:Signature>
+		</test:child>
+	</parent>`
+
+	doc := etree.NewDocument()
+	err := doc.ReadFromString(xmlContent)
+	require.NoError(t, err)
+
+	// Find the SignedInfo element
+	signedInfo := doc.FindElement("//ds:SignedInfo")
+	require.NotNil(t, signedInfo)
+
+	// Test C14N 1.1 canonicalization on the SignedInfo element
+	canonicalizer := MakeC14N11Canonicalizer()
+
+	// Canonicalize the SignedInfo element
+	canonicalBytes, err := canonicalizer.Canonicalize(signedInfo)
+	require.NoError(t, err)
+
+	canonicalStr := string(canonicalBytes)
+
+	// The canonicalized output should include the inherited namespaces from ancestors
+	// At minimum, it should not cause parsing/validation errors
+	t.Logf("Canonicalized SignedInfo: %s", canonicalStr)
+
+	// This test verifies that the canonicalizer doesn't crash and produces output.
+	// With the fix, it should properly inherit namespaces from parent elements.
+	require.Contains(t, canonicalStr, "ds:SignedInfo")
+	require.Contains(t, canonicalStr, "http://www.w3.org/2000/09/xmldsig#")
+}
+
 func TestDigest(t *testing.T) {
 	canonicalizer := MakeC14N10ExclusiveCanonicalizerWithPrefixList("")
 	doc := etree.NewDocument()

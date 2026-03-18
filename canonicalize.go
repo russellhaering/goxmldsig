@@ -89,7 +89,10 @@ func MakeC14N11WithCommentsCanonicalizer() Canonicalizer {
 
 // Canonicalize transforms the input Element into a serialized XML document in canonical form.
 func (c *c14N11Canonicalizer) Canonicalize(el *etree.Element) ([]byte, error) {
-	return canonicalSerialize(canonicalPrep(el, true, c.comments))
+	parentNamespaceAttributes, parentXmlAttributes := getParentNamespaceAndXmlAttributes(el)
+	elCopy := el.Copy()
+	enhanceNamespaceAttributes(elCopy, parentNamespaceAttributes, parentXmlAttributes)
+	return canonicalSerialize(canonicalPrep(elCopy, true, c.comments))
 }
 
 func (c *c14N11Canonicalizer) Algorithm() AlgorithmID {

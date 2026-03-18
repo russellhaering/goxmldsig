@@ -2,11 +2,14 @@ package dsig
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 
 	"github.com/beevik/etree"
@@ -23,6 +26,33 @@ var (
 	ErrMissingSignature = errors.New("Missing signature referencing the top-level element")
 	ErrInvalidSignature = errors.New("Invalid Signature")
 )
+
+// ECDSA signature structure for ASN.1 DER encoding
+type ecdsaSignature struct {
+	R, S *big.Int
+}
+
+// convertXMLDSigECDSASignature converts XML DSig IEEE P1363 format to ASN.1 DER format for ECDSA signatures
+func convertXMLDSigECDSASignature(xmlSigBytes []byte, keySize int) ([]byte, error) {
+	// XML DSig uses IEEE P1363 format: r || s
+	// Each component is keySize bytes (32 for P-256, 48 for P-384, 66 for P-521)
+	if len(xmlSigBytes) != keySize*2 {
+		return nil, fmt.Errorf("invalid ECDSA signature length: expected %d, got %d", keySize*2, len(xmlSigBytes))
+	}
+
+	// Extract r and s
+	rBytes := xmlSigBytes[:keySize]
+	sBytes := xmlSigBytes[keySize:]
+
+	r := new(big.Int).SetBytes(rBytes)
+	s := new(big.Int).SetBytes(sBytes)
+
+	// Create ASN.1 structure
+	sig := ecdsaSignature{R: r, S: s}
+
+	// Encode to ASN.1 DER
+	return asn1.Marshal(sig)
+}
 
 type ValidationContext struct {
 	CertificateStore X509CertificateStore
@@ -208,13 +238,57 @@ func (ctx *ValidationContext) getCanonicalSignedInfo(sig *types.Signature) ([]by
 		return nil, errors.New("Missing SignedInfo")
 	}
 
-	// Canonicalize the xml
-	canonical, err := canonicalSerialize(signedInfo)
+	// Detach SignedInfo and apply correct canonicalization based on CanonicalizationMethod
+	detachedSignedInfo, err := etreeutils.NSDetatch(nsCtx, signedInfo)
 	if err != nil {
 		return nil, err
 	}
 
-	return canonical, nil
+	// Find the CanonicalizationMethod to determine which algorithm to use
+	c14NMethod, err := etreeutils.NSFindOneChildCtx(nsCtx, detachedSignedInfo, Namespace, CanonicalizationMethodTag)
+	if err != nil {
+		return nil, err
+	}
+
+	if c14NMethod == nil {
+		return nil, errors.New("missing CanonicalizationMethod on Signature")
+	}
+
+	c14NAlgorithm := c14NMethod.SelectAttrValue(AlgorithmAttr, "")
+
+	var canonicalSignedInfo *etree.Element
+
+	// Use the correct canonicalization method based on the algorithm specified
+	switch alg := AlgorithmID(c14NAlgorithm); alg {
+	case CanonicalXML10ExclusiveAlgorithmId, CanonicalXML10ExclusiveWithCommentsAlgorithmId:
+		err := etreeutils.TransformExcC14n(detachedSignedInfo, "", alg == CanonicalXML10ExclusiveWithCommentsAlgorithmId)
+		if err != nil {
+			return nil, err
+		}
+		canonicalSignedInfo = detachedSignedInfo
+
+	case CanonicalXML11AlgorithmId:
+		// Use the fixed C14N 1.1 canonicalizer with namespace inheritance fix
+		canonicalizer := MakeC14N11Canonicalizer()
+		return canonicalizer.Canonicalize(detachedSignedInfo)
+
+	case CanonicalXML10RecAlgorithmId:
+		canonicalSignedInfo = canonicalPrep(detachedSignedInfo, true, false)
+
+	case CanonicalXML11WithCommentsAlgorithmId:
+		// Use the fixed C14N 1.1 with comments canonicalizer
+		canonicalizer := MakeC14N11WithCommentsCanonicalizer()
+		return canonicalizer.Canonicalize(detachedSignedInfo)
+
+	case CanonicalXML10WithCommentsAlgorithmId:
+		canonicalSignedInfo = canonicalPrep(detachedSignedInfo, true, true)
+
+	default:
+		return nil, fmt.Errorf("invalid CanonicalizationMethod on Signature: %s", c14NAlgorithm)
+	}
+
+	// Now serialize the properly canonicalized element
+	return canonicalSerialize(canonicalSignedInfo)
 }
 
 // deprecated
@@ -281,6 +355,20 @@ func (ctx *ValidationContext) validateSignature(el *etree.Element, sig *types.Si
 	decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
 	if err != nil {
 		return nil, errors.New("Could not decode signature")
+	}
+
+	// Check if this is an ECDSA signature that needs format conversion
+	if isECDSAAlgorithm(algo) {
+		if ecdsaPubKey, ok := cert.PublicKey.(*ecdsa.PublicKey); ok {
+			// Convert from XML DSig IEEE P1363 format to ASN.1 DER format
+			keySize := (ecdsaPubKey.Curve.Params().BitSize + 7) / 8
+			convertedSig, err := convertXMLDSigECDSASignature(decodedSignature, keySize)
+			if err != nil {
+				// If conversion fails, use original signature (might already be ASN.1 DER)
+			} else {
+				decodedSignature = convertedSig
+			}
+		}
 	}
 
 	err = cert.CheckSignature(algo, canonicalSignedInfoBytes, decodedSignature)
@@ -561,6 +649,14 @@ func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Cer
 	}
 
 	return trustedCert, nil
+}
+
+// isECDSAAlgorithm checks if the signature algorithm is ECDSA-based
+func isECDSAAlgorithm(algo x509.SignatureAlgorithm) bool {
+	return algo == x509.ECDSAWithSHA1 ||
+		algo == x509.ECDSAWithSHA256 ||
+		algo == x509.ECDSAWithSHA384 ||
+		algo == x509.ECDSAWithSHA512
 }
 
 // Validate verifies that the passed element contains a valid enveloped signature
