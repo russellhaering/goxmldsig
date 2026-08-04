@@ -2,8 +2,6 @@ module github.com/russellhaering/goxmldsig
 
 go 1.23.0
 
-toolchain go1.24.0
-
 require (
 	github.com/beevik/etree v1.7.0
 	github.com/jonboulle/clockwork v0.5.0
