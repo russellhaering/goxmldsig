@@ -1,29 +1,27 @@
 package etreeutils
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/beevik/etree"
 	"github.com/stretchr/testify/require"
 )
 
+// nestedElement builds the tree directly rather than parsing it, so that the
+// depth under test stays independent of etree's ReadSettings.MaxDepth.
 func nestedElement(t *testing.T, depth int) *etree.Element {
 	t.Helper()
 
-	var b strings.Builder
-	b.WriteString(`<root xmlns="http://example.org">`)
-	for i := 0; i < depth; i++ {
-		b.WriteString("<a>")
-	}
-	for i := 0; i < depth; i++ {
-		b.WriteString("</a>")
-	}
-	b.WriteString(`</root>`)
-
 	doc := etree.NewDocument()
-	require.NoError(t, doc.ReadFromString(b.String()))
-	return doc.Root()
+	root := doc.CreateElement("root")
+	root.CreateAttr("xmlns", "http://example.org")
+
+	el := root
+	for i := 0; i < depth; i++ {
+		el = el.CreateElement("a")
+	}
+
+	return root
 }
 
 func TestNSDetatchLimit(t *testing.T) {
