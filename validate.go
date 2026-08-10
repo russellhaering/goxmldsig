@@ -3,10 +3,12 @@ package dsig
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 
 	"github.com/beevik/etree"
@@ -281,6 +283,19 @@ func (ctx *ValidationContext) validateSignature(el *etree.Element, sig *types.Si
 	decodedSignature, err := base64.StdEncoding.DecodeString(sig.SignatureValue.Data)
 	if err != nil {
 		return nil, errors.New("Could not decode signature")
+	}
+
+	// [x509.Certificate.CheckSignature] requires ECDSA signatures to be ASN.1 encoded
+	// XML signatures however are simply the concatenation of the octet-encoding of the ECDSA r and s values
+	// See https://www.w3.org/TR/xmldsig-core1/#sec-ECDSA for more details
+	if algo == x509.ECDSAWithSHA1 || algo == x509.ECDSAWithSHA256 || algo == x509.ECDSAWithSHA384 || algo == x509.ECDSAWithSHA512 {
+		r := big.NewInt(0).SetBytes(decodedSignature[:len(decodedSignature)/2])
+		s := big.NewInt(0).SetBytes(decodedSignature[len(decodedSignature)/2:])
+		sequence := struct{ R, S *big.Int }{r, s}
+		decodedSignature, err = asn1.Marshal(sequence)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to marshal ECDSA signature: %w", err)
+		}
 	}
 
 	err = cert.CheckSignature(algo, canonicalSignedInfoBytes, decodedSignature)
