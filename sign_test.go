@@ -138,6 +138,45 @@ func TestSignNonDefaultID(t *testing.T) {
 	require.Equal(t, refURI, "#"+id)
 }
 
+func TestSignSoapRequest(t *testing.T) {
+	// Given
+	//bs, err := ioutil.ReadFile("./testdata/soaprequest_result.xml")
+
+	ks := RandomKeyStoreForTest()
+	ctx := &SigningContext{
+		Hash:          crypto.SHA256,
+		KeyStore:      ks,
+		IdAttribute:   "wsu:Id",
+		Prefix:        DefaultPrefix,
+		Canonicalizer: MakeC14N11Canonicalizer(),
+	}
+
+	doc := etree.NewDocument()
+	err := doc.ReadFromFile("./testdata/soaprequest.xml")
+
+	bodyPath, err := etree.CompilePath("./soap:Envelope/soap:Body")
+	bodyElement := doc.FindElementPath(bodyPath)
+	require.NotNil(t, bodyElement)
+
+	actionPath, err := etree.CompilePath("./soap:Envelope/soap:Header/Action")
+	actionElement := doc.FindElementPath(actionPath)
+	require.NotNil(t, actionElement)
+
+	securityPath, err := etree.CompilePath("./soap:Envelope/soap:Header/wsse:Security")
+	securityElement := doc.FindElementPath(securityPath)
+	require.NotNil(t, securityElement)
+
+	// When
+	sig, err := ctx.ConstructSignatures([]*etree.Element{bodyElement, actionElement}, true)
+	require.NoError(t, err)
+	require.NotNil(t, sig)
+	securityElement.AddChild(sig)
+
+	// Then
+	//	str, err := doc.WriteToString()
+	//	require.NoError(t, err)
+}
+
 func TestIncompatibleSignatureMethods(t *testing.T) {
 	// RSA
 	randomKeyStore := RandomKeyStoreForTest().(*MemoryX509KeyStore)
