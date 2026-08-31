@@ -508,59 +508,74 @@ func (ctx *ValidationContext) findSignature(root *etree.Element) (*types.Signatu
 func (ctx *ValidationContext) verifyCertificate(sig *types.Signature) (*x509.Certificate, error) {
 	now := ctx.Clock.Now()
 
+	// 1. Create a CertPool for your trusted root certificates
 	roots, err := ctx.CertificateStore.Certificates()
 	if err != nil {
 		return nil, err
 	}
+	if len(roots) == 0 {
+		return nil, errors.New("no root certificates provided in the certificate store")
+	}
+	rootPool := x509.NewCertPool()
+	for _, root := range roots {
+		rootPool.AddCert(root)
+	}
 
-	var untrustedCert *x509.Certificate
-
-	if sig.KeyInfo != nil {
-		// If the Signature includes KeyInfo, extract the certificate from there
-		if len(sig.KeyInfo.X509Data.X509Certificates) == 0 || sig.KeyInfo.X509Data.X509Certificates[0].Data == "" {
-			return nil, errors.New("missing X509Certificate within KeyInfo")
-		}
-
-		certData, err := base64.StdEncoding.DecodeString(
-			whiteSpace.ReplaceAllString(sig.KeyInfo.X509Data.X509Certificates[0].Data, ""))
-		if err != nil {
-			return nil, errors.New("Failed to parse certificate")
-		}
-
-		untrustedCert, err = x509.ParseCertificate(certData)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// If the Signature doesn't have KeyInfo, Use the root certificate if there is only one
+	if sig.KeyInfo == nil {
 		if len(roots) == 1 {
-			untrustedCert = roots[0]
-		} else {
-			return nil, errors.New("Missing x509 Element")
+			cert := roots[0]
+			if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+				return nil, errors.New("cert is not valid at this time")
+			}
+			return cert, nil
+		}
+		return nil, errors.New("Missing x509 Element")
+	}
+
+	if len(sig.KeyInfo.X509Data.X509Certificates) == 0 {
+		return nil, errors.New("missing X509Certificate within KeyInfo")
+	}
+
+	// 2. Extract the leaf certificate and any intermediates provided in the signature
+	certData, err := base64.StdEncoding.DecodeString(
+		whiteSpace.ReplaceAllString(sig.KeyInfo.X509Data.X509Certificates[0].Data, ""))
+	if err != nil {
+		return nil, err
+	}
+
+	leafCert, err := x509.ParseCertificate(certData)
+	if err != nil {
+		return nil, err
+	}
+
+	intermediatePool := x509.NewCertPool()
+	if len(sig.KeyInfo.X509Data.X509Certificates) > 1 {
+		for _, cert := range sig.KeyInfo.X509Data.X509Certificates[1:] {
+			intermediateData, err := base64.StdEncoding.DecodeString(whiteSpace.ReplaceAllString(cert.Data, ""))
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse intermediate certificate: %w", err)
+			}
+			intermediateCert, err := x509.ParseCertificate(intermediateData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse intermediate certificate object: %w", err)
+			}
+			intermediatePool.AddCert(intermediateCert)
 		}
 	}
 
-	rootIdx := -1
-	for i, root := range roots {
-		if root.Equal(untrustedCert) {
-			rootIdx = i
-		}
+	// 3. Set up the verification options
+	opts := x509.VerifyOptions{
+		Roots:         rootPool,
+		Intermediates: intermediatePool,
+		CurrentTime:   now,
 	}
 
-	if rootIdx == -1 {
-		return nil, errors.New("Could not verify certificate against trusted certs")
-	}
-	var trustedCert *x509.Certificate
-
-	trustedCert = roots[rootIdx]
-
-	// Verify that the certificate is one we trust
-
-	if now.Before(trustedCert.NotBefore) || now.After(trustedCert.NotAfter) {
-		return nil, errors.New("Cert is not valid at this time")
+	// 4. Perform the actual chain verification
+	if _, err := leafCert.Verify(opts); err != nil {
+		return nil, fmt.Errorf("could not verify certificate against trusted certs: %w", err)
 	}
 
-	return trustedCert, nil
+	return leafCert, nil
 }
 
 // Validate verifies that the passed element contains a valid enveloped signature
