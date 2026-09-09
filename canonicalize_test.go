@@ -1,6 +1,7 @@
 package dsig
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -146,4 +147,116 @@ func TestC14N10RecCanonicalizerWithNamespaceInheritance(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, strings.TrimSpace(expected), strings.TrimSpace(string(canonicalized)))
 
+}
+
+// Inputs exercising the namespace bookkeeping that canonicalPrepInner performs:
+// prefix redeclaration (to the same and to a different URI), resetting the
+// default namespace, attribute ordering next to mixed content and comments, and
+// prefixes declared on an ancestor but first used further down.
+const (
+	nsRedeclaredSameURIInput = `<p:a xmlns:p="urn:x"><p:b xmlns:p="urn:x">t</p:b></p:a>`
+	nsRedeclaredNewURIInput  = `<p:a xmlns:p="urn:x"><p:b xmlns:p="urn:y">t</p:b></p:a>`
+	defaultNSResetInput      = `<a xmlns="urn:x"><b xmlns="">t</b></a>`
+	mixedContentInput        = `<a xmlns="urn:x" z="1" a="2">lead<!-- c --><b xml:lang="en">t</b>tail</a>`
+	multiPrefixNestedInput   = `<p:a xmlns:p="urn:x" xmlns:q="urn:y"><q:b><p:c/></q:b></p:a>`
+)
+
+// TestInclusiveCanonicalizationGoldens pins the output of the inclusive
+// canonicalizers. canonicalPrepInner rewrites a tree in place, so these guard
+// against a change in canonical form, which would silently invalidate every
+// signature produced or verified against it.
+func TestInclusiveCanonicalizationGoldens(t *testing.T) {
+	tests := []struct {
+		name          string
+		canonicalizer Canonicalizer
+		input         string
+		want          string
+	}{
+		{"nsRedeclaredSameURI/C14N11", MakeC14N11Canonicalizer(), nsRedeclaredSameURIInput, `<p:a xmlns:p="urn:x"><p:b>t</p:b></p:a>`},
+		{"nsRedeclaredSameURI/C14N11WithComments", MakeC14N11WithCommentsCanonicalizer(), nsRedeclaredSameURIInput, `<p:a xmlns:p="urn:x"><p:b>t</p:b></p:a>`},
+		{"nsRedeclaredSameURI/C14N10Rec", MakeC14N10RecCanonicalizer(), nsRedeclaredSameURIInput, `<p:a xmlns:p="urn:x"><p:b>t</p:b></p:a>`},
+		{"nsRedeclaredSameURI/C14N10WithComments", MakeC14N10WithCommentsCanonicalizer(), nsRedeclaredSameURIInput, `<p:a xmlns:p="urn:x"><p:b>t</p:b></p:a>`},
+		{"nsRedeclaredNewURI/C14N11", MakeC14N11Canonicalizer(), nsRedeclaredNewURIInput, `<p:a xmlns:p="urn:x"><p:b xmlns:p="urn:y">t</p:b></p:a>`},
+		{"nsRedeclaredNewURI/C14N11WithComments", MakeC14N11WithCommentsCanonicalizer(), nsRedeclaredNewURIInput, `<p:a xmlns:p="urn:x"><p:b xmlns:p="urn:y">t</p:b></p:a>`},
+		{"nsRedeclaredNewURI/C14N10Rec", MakeC14N10RecCanonicalizer(), nsRedeclaredNewURIInput, `<p:a xmlns:p="urn:x"><p:b xmlns:p="urn:y">t</p:b></p:a>`},
+		{"nsRedeclaredNewURI/C14N10WithComments", MakeC14N10WithCommentsCanonicalizer(), nsRedeclaredNewURIInput, `<p:a xmlns:p="urn:x"><p:b xmlns:p="urn:y">t</p:b></p:a>`},
+		{"defaultNSReset/C14N11", MakeC14N11Canonicalizer(), defaultNSResetInput, `<a xmlns="urn:x"><b xmlns="">t</b></a>`},
+		{"defaultNSReset/C14N11WithComments", MakeC14N11WithCommentsCanonicalizer(), defaultNSResetInput, `<a xmlns="urn:x"><b xmlns="">t</b></a>`},
+		{"defaultNSReset/C14N10Rec", MakeC14N10RecCanonicalizer(), defaultNSResetInput, `<a xmlns="urn:x"><b xmlns="">t</b></a>`},
+		{"defaultNSReset/C14N10WithComments", MakeC14N10WithCommentsCanonicalizer(), defaultNSResetInput, `<a xmlns="urn:x"><b xmlns="">t</b></a>`},
+		{"mixedContent/C14N11", MakeC14N11Canonicalizer(), mixedContentInput, `<a xmlns="urn:x" a="2" z="1">lead<b xml:lang="en">t</b>tail</a>`},
+		{"mixedContent/C14N11WithComments", MakeC14N11WithCommentsCanonicalizer(), mixedContentInput, `<a xmlns="urn:x" a="2" z="1">lead<!-- c --><b xml:lang="en">t</b>tail</a>`},
+		{"mixedContent/C14N10Rec", MakeC14N10RecCanonicalizer(), mixedContentInput, `<a xmlns="urn:x" a="2" z="1">lead<b xml:lang="en">t</b>tail</a>`},
+		{"mixedContent/C14N10WithComments", MakeC14N10WithCommentsCanonicalizer(), mixedContentInput, `<a xmlns="urn:x" a="2" z="1">lead<!-- c --><b xml:lang="en">t</b>tail</a>`},
+		{"multiPrefixNested/C14N11", MakeC14N11Canonicalizer(), multiPrefixNestedInput, `<p:a xmlns:p="urn:x" xmlns:q="urn:y"><q:b><p:c></p:c></q:b></p:a>`},
+		{"multiPrefixNested/C14N11WithComments", MakeC14N11WithCommentsCanonicalizer(), multiPrefixNestedInput, `<p:a xmlns:p="urn:x" xmlns:q="urn:y"><q:b><p:c></p:c></q:b></p:a>`},
+		{"multiPrefixNested/C14N10Rec", MakeC14N10RecCanonicalizer(), multiPrefixNestedInput, `<p:a xmlns:p="urn:x" xmlns:q="urn:y"><q:b><p:c></p:c></q:b></p:a>`},
+		{"multiPrefixNested/C14N10WithComments", MakeC14N10WithCommentsCanonicalizer(), multiPrefixNestedInput, `<p:a xmlns:p="urn:x" xmlns:q="urn:y"><q:b><p:c></p:c></q:b></p:a>`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runCanonicalizationTest(t, test.canonicalizer, test.input, test.want)
+		})
+	}
+}
+
+// TestCanonicalPrepDoesNotMutateInput covers the contract the NullCanonicalizer
+// and c14N11Canonicalizer rely on: they hand canonicalPrep an element that the
+// caller still owns.
+func TestCanonicalPrepDoesNotMutateInput(t *testing.T) {
+	doc := etree.NewDocument()
+	require.NoError(t, doc.ReadFromString(mixedContentInput))
+
+	before, err := canonicalSerialize(doc.Root())
+	require.NoError(t, err)
+
+	_ = canonicalPrep(doc.Root(), true, false)
+
+	after, err := canonicalSerialize(doc.Root())
+	require.NoError(t, err)
+	require.Equal(t, string(before), string(after))
+}
+
+// nestedChain builds an element containing a chain `depth` levels deep. It is
+// built rather than parsed so the depth is independent of etree's
+// ReadSettings.MaxDepth.
+func nestedChain(depth int) *etree.Element {
+	doc := etree.NewDocument()
+	root := doc.CreateElement("root")
+	root.CreateAttr("xmlns", "urn:x")
+
+	el := root
+	for i := 0; i < depth; i++ {
+		el = el.CreateElement("a")
+	}
+	el.SetText("leaf")
+
+	return root
+}
+
+func allocsFor(fn func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	fn()
+	runtime.ReadMemStats(&after)
+
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// TestInclusiveCanonicalizationIsLinearInDepth guards the memory behaviour of
+// canonicalPrepInner. Copying at every node made a chain cost O(depth^2), so
+// quadrupling the depth quadrupled the allocations four times over. In place it
+// is linear, and quadrupling the depth should roughly quadruple allocations.
+func TestInclusiveCanonicalizationIsLinearInDepth(t *testing.T) {
+	const shallow, deep = 200, 800
+
+	small := allocsFor(func() { canonicalPrep(nestedChain(shallow), true, false) })
+	large := allocsFor(func() { canonicalPrep(nestedChain(deep), true, false) })
+	require.NotZero(t, small)
+
+	growth := float64(large) / float64(small)
+	t.Logf("depth %d: %d bytes, depth %d: %d bytes, growth %.1fx", shallow, small, deep, large, growth)
+	require.Less(t, growth, 8.0, "allocations should grow about linearly with depth, not quadratically")
 }

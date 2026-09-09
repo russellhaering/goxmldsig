@@ -160,19 +160,26 @@ const nsSpace = "xmlns"
 // TODO(russell_h): This is very similar to excCanonicalPrep - perhaps they should
 // be unified into one parameterized function?
 func canonicalPrep(el *etree.Element, strip bool, comments bool) *etree.Element {
-	return canonicalPrepInner(el, make(map[string]string), strip, comments)
+	// Copy the tree once here rather than at every node in canonicalPrepInner.
+	// Callers pass elements they still own, so the copy cannot be skipped.
+	ne := el.Copy()
+	canonicalPrepInner(ne, make(map[string]string), strip, comments)
+	return ne
 }
 
-func canonicalPrepInner(el *etree.Element, seenSoFar map[string]string, strip bool, comments bool) *etree.Element {
+// canonicalPrepInner canonicalizes el in place. el must be a tree the caller
+// owns; canonicalPrep makes that copy once for the whole tree. Copying at every
+// node instead would deep copy each subtree once per ancestor, which costs
+// O(depth^2) memory for a deeply nested element.
+func canonicalPrepInner(el *etree.Element, seenSoFar map[string]string, strip bool, comments bool) {
 	_seenSoFar := make(map[string]string)
 	maps.Copy(_seenSoFar, seenSoFar)
 
-	ne := el.Copy()
-	sort.Sort(etreeutils.SortedAttrs(ne.Attr))
+	sort.Sort(etreeutils.SortedAttrs(el.Attr))
 	n := 0
-	for _, attr := range ne.Attr {
+	for _, attr := range el.Attr {
 		if attr.Space != nsSpace && !(attr.Space == "" && attr.Key == nsSpace) {
-			ne.Attr[n] = attr
+			el.Attr[n] = attr
 			n++
 			continue
 		}
@@ -180,39 +187,36 @@ func canonicalPrepInner(el *etree.Element, seenSoFar map[string]string, strip bo
 		if attr.Space == nsSpace {
 			key := attr.Space + ":" + attr.Key
 			if uri, seen := _seenSoFar[key]; !seen || attr.Value != uri {
-				ne.Attr[n] = attr
+				el.Attr[n] = attr
 				n++
 				_seenSoFar[key] = attr.Value
 			}
 		} else {
 			if uri, seen := _seenSoFar[nsSpace]; (!seen && attr.Value != "") || attr.Value != uri {
-				ne.Attr[n] = attr
+				el.Attr[n] = attr
 				n++
 				_seenSoFar[nsSpace] = attr.Value
 			}
 		}
 	}
-	ne.Attr = ne.Attr[:n]
+	el.Attr = el.Attr[:n]
 
 	if !comments {
 		c := 0
-		for c < len(ne.Child) {
-			if _, ok := ne.Child[c].(*etree.Comment); ok {
-				ne.RemoveChildAt(c)
+		for c < len(el.Child) {
+			if _, ok := el.Child[c].(*etree.Comment); ok {
+				el.RemoveChildAt(c)
 			} else {
 				c++
 			}
 		}
 	}
 
-	for i, token := range ne.Child {
-		childElement, ok := token.(*etree.Element)
-		if ok {
-			ne.Child[i] = canonicalPrepInner(childElement, _seenSoFar, strip, comments)
+	for _, token := range el.Child {
+		if childElement, ok := token.(*etree.Element); ok {
+			canonicalPrepInner(childElement, _seenSoFar, strip, comments)
 		}
 	}
-
-	return ne
 }
 
 func canonicalSerialize(el *etree.Element) ([]byte, error) {
