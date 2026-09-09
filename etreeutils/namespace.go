@@ -14,19 +14,22 @@ const (
 	xmlnsPrefix   = "xmlns"
 	xmlPrefix     = "xml"
 
+	// defaultDepthLimit bounds how deep a single path may be traversed.
+	defaultDepthLimit = 1000
+
 	XMLNamespace   = "http://www.w3.org/XML/1998/namespace"
 	XMLNSNamespace = "http://www.w3.org/2000/xmlns/"
 )
 
 func NewDefaultNSContext() NSContext {
-	defaultLimit := 1000
 	return NSContext{
 		prefixes: map[string]string{
 			defaultPrefix: XMLNamespace,
 			xmlPrefix:     XMLNamespace,
 			xmlnsPrefix:   XMLNSNamespace,
 		},
-		limit: &defaultLimit,
+		limit:   defaultDepthLimit,
+		limited: true,
 	}
 }
 
@@ -49,21 +52,35 @@ func (e ErrUndeclaredNSPrefix) Error() string {
 
 type NSContext struct {
 	prefixes map[string]string
-	limit    *int
+	// limit is the remaining traversal budget for the current path. It is a
+	// value rather than a pointer so that each level of recursion spends its
+	// own copy: the budget bounds the depth of a path instead of the total
+	// number of nodes in a document, which lets a wide document through while
+	// still refusing a deeply nested one.
+	limit int
+	// limited separates "no budget remaining" from "no budget configured",
+	// which the zero value of NSContext relies on. See EmptyNSContext.
+	limited bool
 }
 
-// CheckLimit checks the traversal limit before calling the handler function
-func (ctx NSContext) CheckLimit() error {
-	if *ctx.limit <= 0 {
+// CheckLimit spends one unit of this context's traversal budget. The receiver
+// is a pointer so that the charge lands on the context handed to child
+// elements, leaving sibling branches with their own budget.
+func (ctx *NSContext) CheckLimit() error {
+	if !ctx.limited {
+		return nil
+	}
+
+	if ctx.limit <= 0 {
 		return ErrTraversalLimit
 	}
-	*ctx.limit--
+	ctx.limit--
 
 	return nil
 }
 
 func (ctx NSContext) checkSubtreeLimit(el *etree.Element) error {
-	if ctx.limit == nil {
+	if !ctx.limited {
 		return nil
 	}
 
@@ -84,7 +101,7 @@ func (ctx NSContext) Copy() NSContext {
 	prefixes := make(map[string]string, len(ctx.prefixes)+4)
 	maps.Copy(prefixes, ctx.prefixes)
 
-	return NSContext{prefixes: prefixes, limit: ctx.limit}
+	return NSContext{prefixes: prefixes, limit: ctx.limit, limited: ctx.limited}
 }
 
 func (ctx NSContext) declare(prefix, namespace string) etree.Attr {
