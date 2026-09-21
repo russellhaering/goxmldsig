@@ -37,6 +37,7 @@ var (
 	ErrInvalidDefaultNamespace = errors.New("invalid default namespace declaration")
 	ErrTraversalHalted         = errors.New("traversal halted")
 	ErrTraversalLimit          = errors.New("traversal limit reached")
+	ErrElementNotFound         = errors.New("element not found")
 )
 
 type ErrUndeclaredNSPrefix struct {
@@ -268,7 +269,8 @@ func NSSelectOne(el *etree.Element, namespace, tag string) (*etree.Element, erro
 // NSSelectOneCtx conducts a depth-first search for an element with the specified namespace
 // and tag. If such an element is found, a new *etree.Element is returned which is a
 // copy of the found element, but with all in-context namespace declarations attached
-// to the element as attributes.
+// to the element as attributes. If no such element is found, ErrElementNotFound is
+// returned.
 func NSSelectOneCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*etree.Element, error) {
 	var found *etree.Element
 
@@ -284,6 +286,10 @@ func NSSelectOneCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*e
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if found == nil {
+		return nil, ErrElementNotFound
 	}
 
 	return found, nil
@@ -336,7 +342,11 @@ func NSFindOne(el *etree.Element, namespace, tag string) (*etree.Element, error)
 }
 
 // NSFindOneCtx conducts a depth-first search for the specified element. If such an element
-// is found a reference to it is returned.
+// is found a reference to it is returned. Unlike its siblings NSSelectOneCtx and
+// NSFindOneChildCtx, a nil element with a nil error is a valid, intentional result here --
+// it means "no such element exists" rather than an error, and at least one caller
+// (checking whether an element still exists after removal) depends on that. Do not
+// "fix" this the way #80 fixed NSSelectOneCtx without checking every caller first.
 func NSFindOneCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*etree.Element, error) {
 	var found *etree.Element
 
@@ -413,8 +423,9 @@ func NSFindOneChild(el *etree.Element, namespace, tag string) (*etree.Element, e
 	return NSFindOneChildCtx(NewDefaultNSContext(), el, namespace, tag)
 }
 
-// NSFindOneCtx conducts a depth-first search for the specified element. If such an
-// element is found a reference to it is returned.
+// NSFindOneChildCtx conducts a depth-first search for the specified element. If such an
+// element is found a reference to it is returned. If no such element is found,
+// ErrElementNotFound is returned.
 func NSFindOneChildCtx(ctx NSContext, el *etree.Element, namespace, tag string) (*etree.Element, error) {
 	var found *etree.Element
 
@@ -425,6 +436,10 @@ func NSFindOneChildCtx(ctx NSContext, el *etree.Element, namespace, tag string) 
 
 	if err != nil && err != ErrTraversalHalted {
 		return nil, err
+	}
+
+	if found == nil {
+		return nil, ErrElementNotFound
 	}
 
 	return found, nil
