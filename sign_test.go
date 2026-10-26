@@ -3,8 +3,10 @@ package dsig
 import (
 	"crypto"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"testing"
+	"time"
 
 	"github.com/beevik/etree"
 	"github.com/stretchr/testify/require"
@@ -170,4 +172,117 @@ func TestSignWithECDSA(t *testing.T) {
 	require.NoError(t, err)
 
 	testSignWithContext(t, ctx, method, crypto.SHA512)
+}
+
+func TestSignWithMGF1(t *testing.T) {
+	randomKeyStore := RandomKeyStoreForTest().(*MemoryX509KeyStore)
+
+	// signer based context
+	ctx, err := NewSigningContext(randomKeyStore.privateKey, [][]byte{randomKeyStore.cert})
+	require.NoError(t, err)
+	require.NoError(t, ctx.SetSignatureMethod(SHA256RSAMGF1SignatureMethod))
+	require.Equal(t, SHA256RSAMGF1SignatureMethod, ctx.GetSignatureMethodIdentifier())
+	testSignWithContext(t, ctx, SHA256RSAMGF1SignatureMethod, crypto.SHA256)
+
+	// key store based context
+	ctx = NewDefaultSigningContext(randomKeyStore)
+	require.NoError(t, ctx.SetSignatureMethod(SHA256RSAMGF1SignatureMethod))
+	require.Equal(t, SHA256RSAMGF1SignatureMethod, ctx.GetSignatureMethodIdentifier())
+	testSignWithContext(t, ctx, SHA256RSAMGF1SignatureMethod, crypto.SHA256)
+}
+
+func TestSignMGF1RoundTrip(t *testing.T) {
+	randomKeyStore := RandomKeyStoreForTest().(*MemoryX509KeyStore)
+
+	signerCtx, err := NewSigningContext(randomKeyStore.privateKey, [][]byte{randomKeyStore.cert})
+	require.NoError(t, err)
+	keyStoreCtx := NewDefaultSigningContext(randomKeyStore)
+
+	for name, ctx := range map[string]*SigningContext{"signer": signerCtx, "keystore": keyStoreCtx} {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, ctx.SetSignatureMethod(SHA256RSAMGF1SignatureMethod))
+
+			signed := signTestRequest(t, ctx)
+			algo := signed.FindElement("//" + SignatureMethodTag).SelectAttr(AlgorithmAttr)
+			require.Equal(t, SHA256RSAMGF1SignatureMethod, algo.Value)
+
+			// validates through x509.SHA256WithRSAPSS
+			validateTestRequest(t, signed, randomKeyStore.cert)
+
+			// the signature value is PSS: a PKCS1v15 label for the same value must not validate
+			algo.Value = RSASHA256SignatureMethod
+			vc := testValidationContext(t, randomKeyStore.cert)
+			_, err := vc.Validate(signed)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestSetSignatureMethodResetsMGF1(t *testing.T) {
+	randomKeyStore := RandomKeyStoreForTest().(*MemoryX509KeyStore)
+	ctx, err := NewSigningContext(randomKeyStore.privateKey, [][]byte{randomKeyStore.cert})
+	require.NoError(t, err)
+
+	require.NoError(t, ctx.SetSignatureMethod(SHA256RSAMGF1SignatureMethod))
+	require.NoError(t, ctx.SetSignatureMethod(RSASHA256SignatureMethod))
+	require.Equal(t, RSASHA256SignatureMethod, ctx.GetSignatureMethodIdentifier())
+
+	signed := signTestRequest(t, ctx)
+	require.Equal(t, RSASHA256SignatureMethod, signed.FindElement("//"+SignatureMethodTag).SelectAttr(AlgorithmAttr).Value)
+	validateTestRequest(t, signed, randomKeyStore.cert)
+
+	// a Hash changed behind SetSignatureMethod falls back to PKCS1v15 and its identifier
+	require.NoError(t, ctx.SetSignatureMethod(SHA256RSAMGF1SignatureMethod))
+	ctx.Hash = crypto.SHA512
+	require.Equal(t, RSASHA512SignatureMethod, ctx.GetSignatureMethodIdentifier())
+	signed = signTestRequest(t, ctx)
+	validateTestRequest(t, signed, randomKeyStore.cert)
+}
+
+func TestMGF1IncompatibleWithECDSA(t *testing.T) {
+	cert, err := tls.X509KeyPair([]byte(ecdsaCert), []byte(ecdsaKey))
+	require.NoError(t, err)
+
+	ctx, err := NewSigningContext(cert.PrivateKey.(crypto.Signer), cert.Certificate)
+	require.NoError(t, err)
+
+	require.Error(t, ctx.SetSignatureMethod(SHA256RSAMGF1SignatureMethod))
+}
+
+func signTestRequest(t *testing.T, ctx *SigningContext) *etree.Element {
+	t.Helper()
+
+	authnRequest := &etree.Element{Tag: "AuthnRequest"}
+	authnRequest.CreateAttr("ID", "_97e34c50-65ec-4132-8b39-02933960a96a")
+
+	signed, err := ctx.SignEnveloped(authnRequest)
+	require.NoError(t, err)
+
+	// reparse, so validation sees the serialized form like a receiver
+	doc := etree.NewDocument()
+	s, err := etree.NewDocumentWithRoot(signed).WriteToString()
+	require.NoError(t, err)
+	require.NoError(t, doc.ReadFromString(s))
+
+	return doc.Root()
+}
+
+func testValidationContext(t *testing.T, certDER []byte) *ValidationContext {
+	t.Helper()
+
+	cert, err := x509.ParseCertificate(certDER)
+	require.NoError(t, err)
+
+	vc := NewDefaultValidationContext(&MemoryX509CertificateStore{Roots: []*x509.Certificate{cert}})
+	vc.Clock = NewFakeClockAt(cert.NotBefore.Add(time.Minute))
+
+	return vc
+}
+
+func validateTestRequest(t *testing.T, el *etree.Element, certDER []byte) {
+	t.Helper()
+
+	validated, err := testValidationContext(t, certDER).Validate(el)
+	require.NoError(t, err)
+	require.NotEmpty(t, validated)
 }

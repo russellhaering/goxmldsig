@@ -467,3 +467,81 @@ UiRSB6Op716xk+9d0jlyrtFF77B3YlKgMThQG6rguXViSwmViywWx+UQD6F1OzES8hoL54hfriOn
 lIpzZeamtJCo/jcdeqYHi3ru+uHOBe91GFPtoDGCVuk7YvzlXKMdgyDx82+kRSnLWYMxaI2zleFY
 nXHhoQk3K5iSdQT/gFgKJk89</dsx:X509Certificate></dsx:X509Data></dsx:KeyInfo><dsx:SignedInfo xmlns:ds="" xmlns:dsx="http://www.w3.org/2000/09/xmldsig#"><dsx:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><dsx:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><dsx:Reference URI="#id149481635007855341483658231"><dsx:Transforms><dsx:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><dsx:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"><ec:InclusiveNamespaces xmlns:ec="http://www.w3.org/2001/10/xml-exc-c14n#" PrefixList="xs"/></dsx:Transform></dsx:Transforms><dsx:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><dsx:DigestValue>JaSnCMsKnmGg4Ew3yXuUdRPCmlzJngSWW1RZYH15Exk=</dsx:DigestValue></dsx:Reference></dsx:SignedInfo><ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#id149481635007855341483658231"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"><ec:InclusiveNamespaces xmlns:ec="http://www.w3.org/2001/10/xml-exc-c14n#" PrefixList="xs"/></ds:Transform></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>nrIzAXSDsFwgvCm+ulbqfqZylzPxCBof6FYDcCEPdCQ=</ds:DigestValue></ds:Reference></ds:SignedInfo></dsx:Signature><saml2:Subject xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"><saml2:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">todd@okta.com</saml2:NameID><saml2:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer"><saml2:SubjectConfirmationData InResponseTo="_ffea96b1-44a2-4a86-9683-45807984ab5b" NotOnOrAfter="2020-09-01T17:56:12.176Z" Recipient="https://dev.sudo.wtf:8443/v1/_saml_callback"/></saml2:SubjectConfirmation></saml2:Subject><saml2:Conditions NotBefore="2020-09-01T17:46:12.176Z" NotOnOrAfter="2020-09-01T17:56:12.176Z" xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"><saml2:AudienceRestriction><saml2:Audience>https://dev.sudo.wtf:8443/v1/teams/asa</saml2:Audience></saml2:AudienceRestriction></saml2:Conditions><saml2:AuthnStatement AuthnInstant="2020-09-01T17:25:30.851Z" SessionIndex="_ffea96b1-44a2-4a86-9683-45807984ab5b" xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"><saml2:AuthnContext><saml2:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml2:AuthnContextClassRef></saml2:AuthnContext></saml2:AuthnStatement><saml2:AttributeStatement xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"><saml2:Attribute Name="FirstName" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified"><saml2:AttributeValue xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:string">Phoebe</saml2:AttributeValue></saml2:Attribute><saml2:Attribute Name="LastName" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified"><saml2:AttributeValue xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:string">Yu</saml2:AttributeValue></saml2:Attribute><saml2:Attribute Name="Email" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified"><saml2:AttributeValue xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:string">phoebe.yu@okta.com</saml2:AttributeValue></saml2:Attribute><saml2:Attribute Name="Login" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified"><saml2:AttributeValue xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:string">phoebe.yu@okta.com</saml2:AttributeValue></saml2:Attribute><saml2:Attribute Name="SSHUserName" NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified"><saml2:AttributeValue xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:string"/></saml2:Attribute></saml2:AttributeStatement></saml2:Assertion></saml2p:Response>`
 )
+
+// TestValidateMGF1 validates a document signed by OpenSSL, so the PSS parameters
+// (SHA-256, MGF1 with SHA-256, salt length 32, RFC 6931 section 2.3.10) are not
+// only checked against this library itself:
+//
+//	openssl dgst -sha256 -sign key.pem -sigopt rsa_padding_mode:pss \
+//	    -sigopt rsa_pss_saltlen:32 -sigopt rsa_mgf1_md:sha256 signedinfo.xml
+func TestValidateMGF1(t *testing.T) {
+	doc := etree.NewDocument()
+	err := doc.ReadFromBytes([]byte(mgf1Document))
+	require.NoError(t, err)
+
+	sig := doc.FindElement("//" + SignatureTag)
+	require.NotEmpty(t, sig)
+	require.Equal(t, SHA256RSAMGF1SignatureMethod, sig.FindElement("//"+SignatureMethodTag).SelectAttr(AlgorithmAttr).Value)
+
+	testValidateDoc(t, doc, mgf1Cert)
+}
+
+func TestValidateMGF1WithWrongSignatureMethod(t *testing.T) {
+	doc := etree.NewDocument()
+	err := doc.ReadFromBytes([]byte(mgf1Document))
+	require.NoError(t, err)
+
+	// the PSS signature value is no valid PKCS1v15 signature
+	doc.FindElement("//" + SignatureMethodTag).SelectAttr(AlgorithmAttr).Value = RSASHA256SignatureMethod
+
+	block, _ := pem.Decode([]byte(mgf1Cert))
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+
+	vc := NewDefaultValidationContext(&MemoryX509CertificateStore{Roots: []*x509.Certificate{cert}})
+	vc.Clock = NewFakeClockAt(cert.NotBefore)
+
+	_, err = vc.Validate(doc.Root())
+	require.Error(t, err)
+}
+
+func TestValidateMGF1WithModified(t *testing.T) {
+	doc := etree.NewDocument()
+	err := doc.ReadFromBytes([]byte(mgf1Document))
+	require.NoError(t, err)
+
+	doc.Root().CreateAttr("Modified", "true")
+
+	block, _ := pem.Decode([]byte(mgf1Cert))
+	cert, err := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, err)
+
+	vc := NewDefaultValidationContext(&MemoryX509CertificateStore{Roots: []*x509.Certificate{cert}})
+	vc.Clock = NewFakeClockAt(cert.NotBefore)
+
+	_, err = vc.Validate(doc.Root())
+	require.Error(t, err)
+}
+
+const mgf1Cert = `
+-----BEGIN CERTIFICATE-----
+MIIC4DCCAcigAwIBAgIUGSnAnY+EC9rpZ3aYH9ZWNt3WSVQwDQYJKoZIhvcNAQEL
+BQAwDzENMAsGA1UEAwwEdGVzdDAgFw0yNjEwMjExNzA5NThaGA8yMTI2MDkyNzE3
+MDk1OFowDzENMAsGA1UEAwwEdGVzdDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC
+AQoCggEBAOD6TigGhZahyjFVlx459kCBgfZZEDXxHZ9zXCoYdkYE3YQo4VHYL26W
+xDZHoR5IqrVarpVYw6Tfz6JAto3GYxtyYF350/vOZ44B4MNtc2ZlWibWY4oppksB
+98DcQqCwX8Mx/3wCJHicKej45r4fo4NvdmJsOSrGkE2JrZbD1OKDwGU0WQmm2fLy
+L29xHWMHD0+Lf5IsjNtYFplvNdcJ0HwXcwSooqPwKu+7rmK6LgJRuXNAAaRIH6Bb
+OWdwT1tCS09xmwy62EgtJiUeeuippwAoA6FM1Jo7TdHaBMHcPSb9UHVu1viRGgic
+KyEljc1ZWY+lDxbRKvQ0/o3LdMsiacMCAwEAAaMyMDAwHQYDVR0OBBYEFLeMf7OU
+Atp9ZEDmYf1M0YWYTDHVMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQAD
+ggEBAKDGnvoBOd+46s2aCPliHrkvlehW++Q2p34rztUWTvxfEddiZe3d+nW9ZzYf
+E4xmWdDNf9UcsuqGZvRis3241PJ7qVJ+8fVZXLJKuvPXGjGB8XwcKEx5uR3o0bA2
+iX4aopehLZcdC68rL1VHjnPJ+GzcYZ2RD7FV6BWjCE/Y/DWOkmHoq3TARMHeKteE
+IUFdfhrXC+dvGyuqVgbHSOX2KV0xFr0XXmBYI78maz7VXsxHl7eUKMag9+bD7TK0
+ydFFoCUCOwRNQj4qpW9DEIOWCwr7WvJXbGPv8K2oeV58kdmNVac5jwDlZUsvx09v
+AGX2dUa28QzFdxN/DTx1Xo+BPGo=
+-----END CERTIFICATE-----
+`
+
+const mgf1Document = `<Document ID="_mgf1-test-vector"><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2006/12/xml-c14n11"/><ds:SignatureMethod Algorithm="http://www.w3.org/2007/05/xmldsig-more#sha256-rsa-MGF1"/><ds:Reference URI="#_mgf1-test-vector"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2006/12/xml-c14n11"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue>1JsQV7ugk+af/md1erlzJQrz96vQl3NjJSRh91fM3EI=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>1HqRKcqu01vFtVw+lBva3wvUA+S3yZBPiNIz2pIiTp88ZBjhSPF/44wja2bqxtQ/l66GaiesILvs6C5iMOBuCzlz1O6ZW8DuEsQf+gbLsLMtQQly9kJPN3OzPJ6YD0bBKlXPHbPJB9XWqMNvMb+vzJFI81Zxa//r2dAD+xyoo7k4LLu6RiLCQtwQGDFSmIjy70DoQgI3TzTadiMuZ8eIVHjx4YBkgZZdnnyivWh1HhLlzmHa5gLzwC4KfKUvdGguke5c99nmXQb0ZkcZf/yGmJEEqYtaQHEhL0wTEvpxfYLLSCPnTq1pIfj4rWUStsWUuSTp0jBDYXPINEciftv3cw==</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIC4DCCAcigAwIBAgIUGSnAnY+EC9rpZ3aYH9ZWNt3WSVQwDQYJKoZIhvcNAQELBQAwDzENMAsGA1UEAwwEdGVzdDAgFw0yNjEwMjExNzA5NThaGA8yMTI2MDkyNzE3MDk1OFowDzENMAsGA1UEAwwEdGVzdDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOD6TigGhZahyjFVlx459kCBgfZZEDXxHZ9zXCoYdkYE3YQo4VHYL26WxDZHoR5IqrVarpVYw6Tfz6JAto3GYxtyYF350/vOZ44B4MNtc2ZlWibWY4oppksB98DcQqCwX8Mx/3wCJHicKej45r4fo4NvdmJsOSrGkE2JrZbD1OKDwGU0WQmm2fLyL29xHWMHD0+Lf5IsjNtYFplvNdcJ0HwXcwSooqPwKu+7rmK6LgJRuXNAAaRIH6BbOWdwT1tCS09xmwy62EgtJiUeeuippwAoA6FM1Jo7TdHaBMHcPSb9UHVu1viRGgicKyEljc1ZWY+lDxbRKvQ0/o3LdMsiacMCAwEAAaMyMDAwHQYDVR0OBBYEFLeMf7OUAtp9ZEDmYf1M0YWYTDHVMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAKDGnvoBOd+46s2aCPliHrkvlehW++Q2p34rztUWTvxfEddiZe3d+nW9ZzYfE4xmWdDNf9UcsuqGZvRis3241PJ7qVJ+8fVZXLJKuvPXGjGB8XwcKEx5uR3o0bA2iX4aopehLZcdC68rL1VHjnPJ+GzcYZ2RD7FV6BWjCE/Y/DWOkmHoq3TARMHeKteEIUFdfhrXC+dvGyuqVgbHSOX2KV0xFr0XXmBYI78maz7VXsxHl7eUKMag9+bD7TK0ydFFoCUCOwRNQj4qpW9DEIOWCwr7WvJXbGPv8K2oeV58kdmNVac5jwDlZUsvx09vAGX2dUa28QzFdxN/DTx1Xo+BPGo=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature></Document>`

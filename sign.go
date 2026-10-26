@@ -29,6 +29,10 @@ type SigningContext struct {
 	// KeyStore is mutually exclusive with signer and certs
 	signer crypto.Signer
 	certs  [][]byte
+
+	// pss selects RSASSA-PSS (SHA256RSAMGF1SignatureMethod) instead of
+	// RSASSA-PKCS1-v1_5, set by SetSignatureMethod
+	pss bool
 }
 
 func NewDefaultSigningContext(ks X509KeyStore) *SigningContext {
@@ -89,8 +93,22 @@ func (ctx *SigningContext) SetSignatureMethod(algorithmID string) error {
 	}
 
 	ctx.Hash = info.Hash
+	ctx.pss = info.PSS
 
 	return nil
+}
+
+// usePSS reports whether signatures are created with RSASSA-PSS. PSS is only
+// defined for SHA256 (SHA256RSAMGF1SignatureMethod), so a Hash changed after
+// SetSignatureMethod falls back to PKCS1v15 and the matching identifier.
+func (ctx *SigningContext) usePSS() bool {
+	return ctx.pss && ctx.Hash == crypto.SHA256 && ctx.getPublicKeyAlgorithm() == x509.RSA
+}
+
+// pssOptions are the options matching the verification of
+// x509.SHA256WithRSAPSS (salt length equals hash length).
+func (ctx *SigningContext) pssOptions() *rsa.PSSOptions {
+	return &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: ctx.Hash}
 }
 
 func (ctx *SigningContext) digest(el *etree.Element) ([]byte, error) {
@@ -115,14 +133,24 @@ func (ctx *SigningContext) signDigest(digest []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		rawSignature, err := rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
+		var rawSignature []byte
+		if ctx.usePSS() {
+			rawSignature, err = rsa.SignPSS(rand.Reader, key, ctx.Hash, digest, ctx.pssOptions())
+		} else {
+			rawSignature, err = rsa.SignPKCS1v15(rand.Reader, key, ctx.Hash, digest)
+		}
 		if err != nil {
 			return nil, err
 		}
 
 		return rawSignature, nil
 	} else {
-		rawSignature, err := ctx.signer.Sign(rand.Reader, digest, ctx.Hash)
+		var opts crypto.SignerOpts = ctx.Hash
+		if ctx.usePSS() {
+			opts = ctx.pssOptions()
+		}
+
+		rawSignature, err := ctx.signer.Sign(rand.Reader, digest, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -303,6 +331,10 @@ func (ctx *SigningContext) SignEnveloped(el *etree.Element) (*etree.Element, err
 }
 
 func (ctx *SigningContext) GetSignatureMethodIdentifier() string {
+	if ctx.usePSS() {
+		return SHA256RSAMGF1SignatureMethod
+	}
+
 	algo := ctx.getPublicKeyAlgorithm()
 
 	if ident, ok := signatureMethodIdentifiers[algo][ctx.Hash]; ok {

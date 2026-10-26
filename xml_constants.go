@@ -50,6 +50,9 @@ const (
 	ECDSASHA256SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"
 	ECDSASHA384SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384"
 	ECDSASHA512SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512"
+
+	// RSASSA-PSS without parameters (RFC 6931, section 2.3.10): SHA-256, MGF1 with SHA-256, salt length 32
+	SHA256RSAMGF1SignatureMethod = "http://www.w3.org/2007/05/xmldsig-more#sha256-rsa-MGF1"
 )
 
 // Well-known signature algorithms
@@ -77,6 +80,7 @@ var digestAlgorithmIdentifiers = map[crypto.Hash]string{
 type signatureMethodInfo struct {
 	PublicKeyAlgorithm x509.PublicKeyAlgorithm
 	Hash               crypto.Hash
+	PSS                bool
 }
 
 var digestAlgorithmsByIdentifier = map[string]crypto.Hash{}
@@ -93,6 +97,11 @@ func init() {
 				Hash:               hash,
 			}
 		}
+	}
+	signatureMethodsByIdentifier[SHA256RSAMGF1SignatureMethod] = signatureMethodInfo{
+		PublicKeyAlgorithm: x509.RSA,
+		Hash:               crypto.SHA256,
+		PSS:                true,
 	}
 }
 
@@ -120,4 +129,6 @@ var x509SignatureAlgorithmByIdentifier = map[string]x509.SignatureAlgorithm{
 	ECDSASHA256SignatureMethod: x509.ECDSAWithSHA256,
 	ECDSASHA384SignatureMethod: x509.ECDSAWithSHA384,
 	ECDSASHA512SignatureMethod: x509.ECDSAWithSHA512,
+
+	SHA256RSAMGF1SignatureMethod: x509.SHA256WithRSAPSS,
 }
