@@ -3,6 +3,7 @@ package etreeutils
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/beevik/etree"
@@ -61,11 +62,27 @@ func (ctx NSContext) CheckLimit() error {
 	return nil
 }
 
+func (ctx NSContext) checkSubtreeLimit(el *etree.Element) error {
+	if ctx.limit == nil {
+		return nil
+	}
+
+	if err := ctx.CheckLimit(); err != nil {
+		return err
+	}
+
+	for _, child := range el.ChildElements() {
+		if err := ctx.checkSubtreeLimit(child); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (ctx NSContext) Copy() NSContext {
 	prefixes := make(map[string]string, len(ctx.prefixes)+4)
-	for k, v := range ctx.prefixes {
-		prefixes[k] = v
-	}
+	maps.Copy(prefixes, ctx.prefixes)
 
 	return NSContext{prefixes: prefixes, limit: ctx.limit}
 }
@@ -127,9 +144,7 @@ func (ctx NSContext) SubContext(el *etree.Element) (NSContext, error) {
 // Prefixes returns a copy of this context's prefix map.
 func (ctx NSContext) Prefixes() map[string]string {
 	prefixes := make(map[string]string, len(ctx.prefixes))
-	for k, v := range ctx.prefixes {
-		prefixes[k] = v
-	}
+	maps.Copy(prefixes, ctx.prefixes)
 
 	return prefixes
 }
@@ -183,7 +198,12 @@ func NSTraverse(ctx NSContext, el *etree.Element, handle NSIterHandler) error {
 // NSDetatch makes a copy of the passed element, and declares any namespaces in
 // the passed context onto the new element before returning it.
 func NSDetatch(ctx NSContext, el *etree.Element) (*etree.Element, error) {
-	ctx, err := ctx.SubContext(el)
+	err := ctx.checkSubtreeLimit(el)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, err = ctx.SubContext(el)
 	if err != nil {
 		return nil, err
 	}
